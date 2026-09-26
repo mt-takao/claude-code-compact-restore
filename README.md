@@ -3,6 +3,8 @@
 [![test](https://github.com/mt-takao/claude-code-compact-restore/actions/workflows/test.yml/badge.svg)](https://github.com/mt-takao/claude-code-compact-restore/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+日本語 | [English](README.en.md)
+
 Claude Code で `/compact` や自動圧縮（auto-compact）が走っても、作業の文脈を失わないためのフックとコマンドのセットです。
 
 > **English summary:** Hooks and a slash command that preserve working context across Claude Code compaction. A `PreCompact` hook snapshots your task list, recent prompts, edited files and git state; a `SessionStart` hook re-injects that snapshot plus your personal working notes after compaction. Install per team, per project, or globally with `bash install.sh team|personal|global`. Requires Python 3.9+.
