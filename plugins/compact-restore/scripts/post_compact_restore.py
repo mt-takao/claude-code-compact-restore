@@ -2,11 +2,11 @@
 """
 SessionStart hook: 作業状態をコンテキストへ注入する。
 
-  source=compact           … 圧縮前スナップショット + 作業ノート
+  source=compact              … 圧縮前スナップショット + 作業ノート
   source=startup/resume/clear … 作業ノートのみ
 
-作業ノート・スナップショットはどちらも「そのプロジェクトの」
-.claude/context/ から読むので、プロジェクト単位でもユーザー単位でも同じスクリプトで動く。
+クラウドセッション（CLAUDE_CODE_REMOTE=true。Claude Code Projects のスレッドを含む）では、
+.claude/context/ がその VM 限りで消えうるため、永続化の案内も添える。
 """
 import json
 import os
@@ -15,6 +15,20 @@ from pathlib import Path
 
 SNAPSHOT_MAX = 12000
 NOTES_MAX = 6000
+PROJECT_FILES = Path(os.environ.get("COMPACT_RESTORE_PROJECT_FILES", "/mnt/project-files"))
+
+CLOUD_GUIDE = (
+    "【クラウドセッションでの記録先】このセッションはクラウド VM で動いています。"
+    "`.claude/context/`（作業ノート・スナップショット）はこの VM 内だけのもので、"
+    "他のスレッドや、作り直された VM には引き継がれません。\n"
+    "- 作業の途中経過はこまめに commit して push する（コミットされていない変更は VM の再作成で失われうる）\n"
+)
+PROJECT_GUIDE = (
+    "- これは Claude Code Projects のスレッドです。スレッドをまたいで残すべき決定事項・却下した案・"
+    "落とし穴は、作業ノートではなく **プロジェクトメモリ** に記憶する（後続のスレッドとコーディネーターが読む）\n"
+    "- このスレッド内の進捗（現在地・次にやること）は作業ノートに書く。完了報告には要点を含め、"
+    "コーディネーターが報告だけで状況を把握できるようにする\n"
+)
 
 
 def read(p, limit):
@@ -26,6 +40,13 @@ def read(p, limit):
     return body
 
 
+def environment():
+    """local / cloud / project-thread を判定する"""
+    if os.environ.get("CLAUDE_CODE_REMOTE") != "true":
+        return "local"
+    return "project-thread" if PROJECT_FILES.is_dir() else "cloud"
+
+
 def main():
     try:
         hook = json.load(sys.stdin)
@@ -34,6 +55,7 @@ def main():
     source = hook.get("source", "")
     project_dir = Path(os.environ.get("CLAUDE_PROJECT_DIR") or hook.get("cwd") or os.getcwd())
     ctx = project_dir / ".claude" / "context"
+    env = environment()
 
     parts = []
     if source == "compact":
@@ -49,8 +71,11 @@ def main():
     if notes:
         parts.append(
             "【作業ノート】このプロジェクトで自分（このユーザー）が進めている作業の要点です。"
-            "`/checkpoint` で更新されます。\n\n" + notes
+            "`checkpoint` コマンドで更新されます。\n\n" + notes
         )
+    if env != "local":
+        parts.append(CLOUD_GUIDE + (PROJECT_GUIDE if env == "project-thread" else ""))
+
     if not parts:
         return 0
     print(json.dumps({"hookSpecificOutput": {

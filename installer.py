@@ -5,6 +5,8 @@ claude-code-compact-restore installer
   team     : プロジェクトにコミットしてチーム全員で使う（仕組みは共有、ノートは各自）
   personal : このプロジェクトで自分だけ使う（git には一切載せない）
   global   : 自分の全プロジェクトで使う（~/.claude に入れる）
+  plugin   : プラグインとして導入する設定をリポジトリにコミットする
+             （Claude Code Projects のスレッドなどクラウドセッションでも動く。複数リポジトリの Projects にも対応）
 
   --uninstall : 指定モードで入れたものを取り除く（作業ノート・スナップショットは残す）
 何度実行しても重複しません。v1（CLAUDE.md の @import 方式）からの移行も兼ねます。
@@ -19,6 +21,10 @@ import sys
 from pathlib import Path
 
 KIT = Path(__file__).resolve().parent
+PLUGIN_DIR = KIT / "plugins" / "compact-restore"
+MARKETPLACE = "mt-takao"
+PLUGIN_ID = f"compact-restore@{MARKETPLACE}"
+DEFAULT_REPO = "mt-takao/claude-code-compact-restore"
 SCRIPTS = ["pre_compact_snapshot.py", "post_compact_restore.py"]
 SECTION = "## コンテキスト復元（圧縮対策）"
 MARK = "# compact-restore-kit"
@@ -58,18 +64,45 @@ def strip_our_hooks(settings):
         settings.pop("hooks", None)
 
 
-def update_settings(path, prefix, install):
-    data = json.loads(path.read_text()) if path.exists() else {}
-    strip_our_hooks(data)
-    if install:
-        hooks = data.setdefault("hooks", {})
-        for event, groups in hook_config(prefix).items():
-            hooks.setdefault(event, []).extend(groups)
+def strip_plugin(settings):
+    """plugin モードで追加したマーケットプレイスと有効化設定を取り除く"""
+    for key, name in (("enabledPlugins", PLUGIN_ID), ("extraKnownMarketplaces", MARKETPLACE)):
+        section = settings.get(key)
+        if isinstance(section, dict):
+            section.pop(name, None)
+            if not section:
+                settings.pop(key, None)
+
+
+def write_settings(path, data, install):
     if not install and not data and path.exists():
         path.unlink()  # 中身が空になったら削除
     elif data or path.exists():
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+
+def update_plugin_settings(path, repo, install):
+    data = json.loads(path.read_text()) if path.exists() else {}
+    strip_our_hooks(data)  # 直接登録のフックと二重にならないように
+    strip_plugin(data)
+    if install:
+        data.setdefault("extraKnownMarketplaces", {})[MARKETPLACE] = {
+            "source": {"source": "github", "repo": repo}}
+        data.setdefault("enabledPlugins", {})[PLUGIN_ID] = True
+    write_settings(path, data, install)
+    ok(f"{path} にプラグイン {PLUGIN_ID} を{'登録' if install else '削除'}")
+
+
+def update_settings(path, prefix, install):
+    data = json.loads(path.read_text()) if path.exists() else {}
+    strip_our_hooks(data)
+    strip_plugin(data)  # plugin モードからの切り替え
+    if install:
+        hooks = data.setdefault("hooks", {})
+        for event, groups in hook_config(prefix).items():
+            hooks.setdefault(event, []).extend(groups)
+    write_settings(path, data, install)
     ok(f"{path} のフックを{'登録' if install else '削除'}")
 
 
@@ -79,11 +112,11 @@ def strip_section(text):
     return pattern.sub("", text).rstrip() + "\n"
 
 
-def update_guidance(path, install):
+def update_guidance(path, install, checkpoint="/checkpoint"):
     text = path.read_text(encoding="utf-8") if path.exists() else ""
     cleaned = strip_section(text) if SECTION in text else text
     if install:
-        cleaned = cleaned.rstrip() + "\n" + (KIT / "templates" / "CLAUDE.md.snippet").read_text(encoding="utf-8")
+        cleaned = cleaned.rstrip() + "\n" + (KIT / "templates" / "CLAUDE.md.snippet").read_text(encoding="utf-8").replace("{CHECKPOINT}", checkpoint)
     if not install and not cleaned.strip() and path.exists():
         path.unlink()
     elif cleaned.strip() or path.exists():
@@ -150,9 +183,9 @@ def copy_files(hooks_dir, cmds_dir, install):
         cmds_dir.mkdir(parents=True, exist_ok=True)
         for s in SCRIPTS:
             dst = hooks_dir / s
-            shutil.copy2(KIT / "hooks" / s, dst)
+            shutil.copy2(PLUGIN_DIR / "scripts" / s, dst)
             dst.chmod(0o755)
-        shutil.copy2(KIT / "commands" / "checkpoint.md", cmds_dir / "checkpoint.md")
+        shutil.copy2(PLUGIN_DIR / "commands" / "checkpoint.md", cmds_dir / "checkpoint.md")
         ok(f"スクリプトを {hooks_dir}、/checkpoint を {cmds_dir} に配置")
     else:
         for p in [*(hooks_dir / s for s in SCRIPTS), cmds_dir / "checkpoint.md"]:
@@ -163,8 +196,9 @@ def copy_files(hooks_dir, cmds_dir, install):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("mode", choices=["team", "personal", "global"])
-    ap.add_argument("project", nargs="?", default=".", help="team/personal の導入先（既定: カレント）")
+    ap.add_argument("mode", choices=["team", "personal", "global", "plugin"])
+    ap.add_argument("project", nargs="?", default=".", help="team/personal/plugin の導入先（既定: カレント）")
+    ap.add_argument("--repo", default=DEFAULT_REPO, help=f"plugin モードのマーケットプレイス（既定: {DEFAULT_REPO}）")
     ap.add_argument("--uninstall", action="store_true")
     a = ap.parse_args()
     install = not a.uninstall
@@ -182,9 +216,21 @@ def main():
             sys.exit(f"導入先が見つかりません: {proj}")
         print(f"→ モード: {a.mode}（{proj}）")
         claude = proj / ".claude"
+        if a.mode == "plugin":
+            if install:  # team モードで置いたファイルがあれば片付ける（/checkpoint の重複を防ぐ）
+                copy_files(claude / "hooks", claude / "commands", False)
+            update_plugin_settings(claude / "settings.json", a.repo, install)
+            update_guidance(proj / "CLAUDE.md", install, "/compact-restore:checkpoint")
+            update_ignore(proj / ".gitignore", [".claude/context/"], install, "plugin")
+            if install:
+                untrack_context(proj)
+            finish(install, "/compact-restore:checkpoint")
+            return
         copy_files(claude / "hooks", claude / "commands", install)
         prefix = "$CLAUDE_PROJECT_DIR/.claude/hooks"
         if a.mode == "team":
+            if install:  # plugin モードからの切り替え時は除外ブロックを差し替え
+                update_ignore(proj / ".gitignore", [], False, "plugin")
             update_settings(claude / "settings.json", prefix, install)
             update_guidance(proj / "CLAUDE.md", install)
             update_ignore(proj / ".gitignore", [".claude/context/"], install, "team")
@@ -202,9 +248,13 @@ def main():
             else:
                 print("  （.git が見つからないため git 除外設定はスキップ）")
 
+    finish(install, "/checkpoint")
+
+
+def finish(install, checkpoint):
     if install:
         print("完了。Claude Code を再起動（Desktop は新しいセッションを開始）してください。")
-        print("作業ノートは初回の /checkpoint で .claude/context/working-notes.md に作られます。")
+        print(f"作業ノートは初回の {checkpoint} で .claude/context/working-notes.md に作られます。")
     else:
         print("アンインストール完了。.claude/context/（作業ノート・スナップショット）は残しています。")
 

@@ -1,0 +1,8 @@
+{
+  "name": "compact-restore",
+  "version": "3.0.0",
+  "description": "Preserve working context across Claude Code compaction (local sessions and Claude Code Projects threads)",
+  "author": { "name": "Takao Mukai" },
+  "homepage": "https://github.com/mt-takao/claude-code-compact-restore",
+  "license": "MIT"
+}
