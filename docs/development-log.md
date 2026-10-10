@@ -27,7 +27,7 @@ Claude Code で作業を引き継ぐときの前提資料として使う。
 - インストーラを3モード化：`team` / `personal` / `global`、`--uninstall`、v1 からの移行（コミット済みノートの追跡解除）
 - 公開用に再構成：MIT ライセンス、GitHub Actions（Ubuntu・macOS × Python 3.9・3.13）、自動テスト 29 項目、日英 README
 
-### v3（ブランチ `v3-projects-support`、未マージ）
+### v3（ブランチ `claude/project-thread-qg6z1b`、PR でレビュー中）
 
 Claude Code Projects（プロジェクト会話＝コーディネーター + スレッド＝クラウドセッション）では、圧縮は自動のみで手動の `/compact` は使わない。ドキュメントを確認して見つかった問題と対応：
 
@@ -64,7 +64,7 @@ Claude Code Projects（プロジェクト会話＝コーディネーター + ス
 
 ## 未解決・次にやること
 
-1. **v3 の push とマージ**：claude.ai のクラウドセッションからは GitHub App 未導入のため push できなかった（403）。手元で `apply-v3.sh`（パッチ適用 → テスト → push → PR）を使うか、Claude GitHub App をリポジトリに入れる
+1. **v3 のマージ**：claude.ai のチャットからは push できなかった（403）ため、パッチを Claude Code Projects のスレッドから適用して PR にした。レビューしてマージする
 2. **実環境での検証**：実際の Projects スレッドで、自動圧縮をまたいで復元できるかは未確認。Desktop の Code タブ（Local）での `/compact` 復元も、実機での確認はユーザー側で行う
 3. **マージ前のプラグイン試用**：settings.json は GitHub の main からプラグインを取得するため、マージ前は `/plugin marketplace add <ローカルのリポジトリ>` で入れる
 4. transcript の形式は Claude Code の内部仕様なので、将来の変更で抽出が壊れていないか定期的に確認する
