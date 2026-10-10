@@ -33,8 +33,9 @@ Claude Code Projects（プロジェクト会話＝コーディネーター + ス
 
 | 問題 | 対応 |
 |---|---|
-| リポジトリが複数のプロジェクトでは、リポジトリの `.claude/settings.json` のフックがスレッドに適用されない（プラグインのフックは適用される） | プラグイン化。`install.sh plugin` でリポジトリの settings.json に `extraKnownMarketplaces` と `enabledPlugins` を登録 |
-| `personal` / `global` は `~/.claude` や `settings.local.json` を使うのでクラウドに届かない | README で「ローカルのみ」と明記。Projects では `plugin` を使う |
+| 配布しやすくしたい | プラグイン化。`install.sh plugin` でリポジトリの settings.json に `extraKnownMarketplaces` と `enabledPlugins` を登録（ローカルのセッション向け） |
+| `personal` / `global` / `plugin` はクラウドに届かない（`~/.claude` や `settings.local.json` は VM にない。リポジトリで有効化したプラグインもクラウドセッションはインストールしない） | README で「ローカルのみ」と明記。Projects では `team` を使う |
+| リポジトリが複数のプロジェクトでは、リポジトリの `.claude/settings.json` のフックもプラグインもスレッドに適用されない | 非対応と明記。プロジェクトメモリとプロジェクト指示で文脈を残す |
 | `.claude/context/` は VM 内だけでスレッド間共有されず、VM 再作成で消える | SessionStart がクラウド（`CLAUDE_CODE_REMOTE=true`）と Projects スレッド（`/mnt/project-files` の有無）を判定し、「こまめに push」「スレッドをまたぐ決定はプロジェクトメモリへ」と案内を注入 |
 | コーディネーターにはフックが効かない | `templates/project-instructions.md`（プロジェクト指示の文例）で、プロジェクトメモリへの記録ルールを渡す |
 
@@ -47,6 +48,7 @@ Claude Code Projects（プロジェクト会話＝コーディネーター + ス
 - 注入量の上限：スナップショット 12,000 文字、ノート 6,000 文字。スナップショット履歴は直近 20 件
 - 圧縮サマリーと食い違う場合はスナップショットの具体的記録を優先し、推測せずユーザーに確認するよう注入文で指示する
 - コマンド名：プラグイン導入時は `/compact-restore:checkpoint`、直接導入時は `/checkpoint`
+- Projects・クラウドセッション向けは `team` モード。公式ドキュメント（cloud-environments の「What carries over from your setup」）に、クラウドセッションはリポジトリの `enabledPlugins` / `extraKnownMarketplaces` のプラグインをインストールせず、リポジトリ複数のセッションはリポジトリのフックを読まないと明記されているため（2026-10-11 に確認）
 
 ## 却下した案
 
@@ -65,7 +67,7 @@ Claude Code Projects（プロジェクト会話＝コーディネーター + ス
 ## 未解決・次にやること
 
 1. **v3 のマージ**：claude.ai のチャットからは push できなかった（403）ため、パッチを Claude Code Projects のスレッドから適用して PR にした。レビューしてマージする
-2. **実環境での検証**：実際の Projects スレッドで、自動圧縮をまたいで復元できるかは未確認。Desktop の Code タブ（Local）での `/compact` 復元も、実機での確認はユーザー側で行う
+2. **実環境での検証**：Desktop の Code タブ（Local）での `/compact` 復元はプラグイン導入で確認済み（2026-10-11）。タスクリスト・未コミット変更の退避、自動圧縮、Projects スレッド（`team` モード）での復元は未確認
 3. **マージ前のプラグイン試用**：settings.json は GitHub の main からプラグインを取得するため、マージ前は `/plugin marketplace add <ローカルのリポジトリ>` で入れる
 4. transcript の形式は Claude Code の内部仕様なので、将来の変更で抽出が壊れていないか定期的に確認する
 5. Windows（WSL 以外）では `python3` を `python` / `py` に書き換える必要がある。インストーラでの自動判定は未対応

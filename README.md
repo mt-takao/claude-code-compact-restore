@@ -6,9 +6,9 @@
 日本語 | [English](README.en.md)
 
 Claude Code で `/compact` や自動圧縮（auto-compact）が走っても、作業の文脈を失わないためのフックとコマンドのセットです。
-ローカルのセッションに加え、自動圧縮のみの [Claude Code Projects](https://code.claude.com/docs/ja/claude-projects) のスレッド（クラウドセッション）でも動きます。
+ローカルのセッションに加え、自動圧縮のみの [Claude Code Projects](https://code.claude.com/docs/ja/claude-projects) のスレッド（クラウドセッション、リポジトリ 1 つの場合）でも、`team` モードで動きます。
 
-> **English summary:** Hooks and a slash command that preserve working context across Claude Code compaction. A `PreCompact` hook snapshots your task list, recent prompts, edited files and git state; a `SessionStart` hook re-injects that snapshot plus your personal working notes after compaction. Works in local sessions and in Claude Code Projects threads (cloud sessions, auto-compact only). Install as a plugin (`bash install.sh plugin`) or as plain hooks (`team|personal|global`). Requires Python 3.9+.
+> **English summary:** Hooks and a slash command that preserve working context across Claude Code compaction. A `PreCompact` hook snapshots your task list, recent prompts, edited files and git state; a `SessionStart` hook re-injects that snapshot plus your personal working notes after compaction. Works in local sessions, and in Claude Code Projects threads with one repository (cloud sessions, auto-compact only) via `team` mode. Install as a plugin (`bash install.sh plugin`) or as plain hooks (`team|personal|global`). Requires Python 3.9+.
 
 ## なぜ必要か
 
@@ -39,8 +39,8 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 
 | モード | 使う場面 | 設定の置き場所 | git の扱い |
 |---|---|---|---|
-| `plugin`（推奨） | チームで使う。Claude Code Projects・クラウドセッションでも使う | `.claude/settings.json`（プラグインの登録）/ `CLAUDE.md` | 登録設定をコミットして共有する（ノートは各自） |
-| `team` | チーム全員で使う | `.claude/settings.json` / `CLAUDE.md` | 仕組みをコミットして共有する（ノートは各自） |
+| `plugin` | チームで使う（ローカルのセッション） | `.claude/settings.json`（プラグインの登録）/ `CLAUDE.md` | 登録設定をコミットして共有する（ノートは各自） |
+| `team` | チームで使う。Claude Code Projects・クラウドセッションでも使う | `.claude/settings.json` / `CLAUDE.md` | 仕組みをコミットして共有する（ノートは各自） |
 | `personal` | このプロジェクトで自分だけ使う | `.claude/settings.local.json` / `CLAUDE.local.md` | `.git/info/exclude` で一切載せない |
 | `global` | 自分の全プロジェクトで使う | `~/.claude/settings.json` / `~/.claude/CLAUDE.md` | git のグローバル除外設定に追加する |
 
@@ -50,15 +50,15 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 - 導入後は Claude Code を再起動してください。Desktop アプリの場合は新しいセッションを開きます
 - `plugin` と `team` は切り替え式です。どちらかを実行すると、もう一方の設定は取り除かれます
 - `team`・`plugin` と `global` を同じ人が併用すると注入が二重になるので、どちらか一方にしてください
-- `personal` と `global` はローカルのセッションでのみ動きます。クラウドセッションには引き継がれません
+- `plugin`・`personal`・`global` はローカルのセッションでのみ動きます。クラウドセッションは、リポジトリの settings.json で有効化したプラグインをインストールしないためです（[公式ドキュメント](https://code.claude.com/docs/ja/cloud-environments#what-carries-over-from-your-setup)）
 - 取り除くときは、同じモードで末尾に `--uninstall` を付けて実行します。作業ノートとスナップショットは残ります
 
 ### チームで導入する場合
 
-1. 導入担当者が `install.sh plugin .` を実行し、変更を PR にする
-2. マージ後、メンバーは pull して Claude Code を開き、フォルダの信頼を承認すると、プラグインが自動で入ります（python3 が必要です）
+- **ローカルのセッションだけで使う**：導入担当者が `install.sh plugin .` を実行して PR にします。マージ後、各メンバーは pull して一度だけ `claude plugin install compact-restore@mt-takao --scope project` を実行します（リポジトリの設定は有効化だけで、ダウンロードはしないため）
+- **Claude Code Projects・クラウドセッションでも使う**：`install.sh team .` でフックのスクリプトを直接コミットします。メンバーは pull するだけで使えます
 
-プラグインを使わずにフックのスクリプトを直接コミットしたい場合は `install.sh team .` を使います。
+どちらも python3 が必要です。
 
 ### プラグインとして直接入れる場合
 
@@ -83,15 +83,15 @@ Cowork タブではフックが発火しないという報告があります。
 
 | 対象 | フックは動くか | 文脈の残し方 |
 |---|---|---|
-| スレッド（リポジトリ 1 つのプロジェクト） | `plugin` / `team` どちらでも動く | 自動圧縮の直前に退避し、直後に再注入する |
-| スレッド（リポジトリ複数のプロジェクト） | `plugin` のみ動く（リポジトリの settings.json のフックは適用されないため） | 同上 |
+| スレッド（リポジトリ 1 つのプロジェクト） | `team` で動く（`plugin` は動かない） | 自動圧縮の直前に退避し、直後に再注入する |
+| スレッド（リポジトリ複数のプロジェクト） | 動かない（リポジトリの settings.json のフックもプラグインも読まれないため） | プロジェクトメモリとプロジェクト指示で残す |
 | コーディネーター（プロジェクト会話） | 動かない | プロジェクトメモリとプロジェクト指示で残す |
 
 設定は次の 3 つです。
 
-1. **プロジェクトに追加するリポジトリに `install.sh plugin .` で導入してコミットする。** スレッドはクローンしたリポジトリの設定からプラグインを入れます。リポジトリを複数追加している場合は、そのうち 1 つに入っていれば全スレッドで動きます
+1. **プロジェクトに追加するリポジトリに `install.sh team .` で導入してコミットする。** スレッドはクローンしたリポジトリの `.claude/settings.json` のフックを実行します。クラウドセッションはリポジトリで有効化したプラグインをインストールしないので、`plugin` モードは使えません
 2. **[`templates/project-instructions.md`](templates/project-instructions.md) を「Project settings > Memory > プロジェクト指示」に貼る。** 決定事項はプロジェクトメモリに記憶する、途中経過はこまめに push する、完了報告に要点を含める、といったルールがコーディネーターと全スレッドに渡ります
-3. **スレッドの区切りで `/compact-restore:checkpoint` を使う。** 作業ノートの更新に加えて、未コミットの変更を push し、後続のスレッドに必要な決定事項をプロジェクトメモリに記憶します
+3. **スレッドの区切りで `/checkpoint` を使う。** 作業ノートの更新に加えて、未コミットの変更を push し、後続のスレッドに必要な決定事項をプロジェクトメモリに記憶します
 
 クラウドセッションの `.claude/context/` はその VM の中だけのもので、ほかのスレッドや作り直された VM には引き継がれません。そのためスレッド内では次のように役割を分けています。
 

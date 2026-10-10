@@ -6,7 +6,8 @@ claude-code-compact-restore installer
   personal : このプロジェクトで自分だけ使う（git には一切載せない）
   global   : 自分の全プロジェクトで使う（~/.claude に入れる）
   plugin   : プラグインとして導入する設定をリポジトリにコミットする
-             （Claude Code Projects のスレッドなどクラウドセッションでも動く。複数リポジトリの Projects にも対応）
+             （ローカルのセッション向け。クラウドセッションはリポジトリで有効化したプラグインを入れないため、
+              Claude Code Projects のスレッドでは team を使う）
 
   --uninstall : 指定モードで入れたものを取り除く（作業ノート・スナップショットは残す）
 何度実行しても重複しません。v1（CLAUDE.md の @import 方式）からの移行も兼ねます。

@@ -6,7 +6,7 @@
 [日本語](README.md) | English
 
 A set of hooks and a slash command that keep your working context intact when Claude Code runs `/compact` or auto-compaction.
-It works in local sessions and in [Claude Code Projects](https://code.claude.com/docs/en/claude-projects) threads (cloud sessions that only auto-compact).
+It works in local sessions, and via `team` mode in [Claude Code Projects](https://code.claude.com/docs/en/claude-projects) threads with one repository (cloud sessions that only auto-compact).
 
 ## Why
 
@@ -37,8 +37,8 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 
 | Mode | Use case | Where settings go | git handling |
 |---|---|---|---|
-| `plugin` (recommended) | The team uses it, including in Claude Code Projects and cloud sessions | `.claude/settings.json` (plugin registration) / `CLAUDE.md` | The registration is committed and shared (notes stay personal) |
-| `team` | The whole team uses it | `.claude/settings.json` / `CLAUDE.md` | The setup is committed and shared (notes stay personal) |
+| `plugin` | The team uses it (local sessions) | `.claude/settings.json` (plugin registration) / `CLAUDE.md` | The registration is committed and shared (notes stay personal) |
+| `team` | The team uses it, including in Claude Code Projects and cloud sessions | `.claude/settings.json` / `CLAUDE.md` | The setup is committed and shared (notes stay personal) |
 | `personal` | Only you, in this project | `.claude/settings.local.json` / `CLAUDE.local.md` | Kept out of git entirely via `.git/info/exclude` |
 | `global` | You, in all your projects | `~/.claude/settings.json` / `~/.claude/CLAUDE.md` | Added to git's global ignore file |
 
@@ -48,15 +48,15 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 - Restart Claude Code after installing. In the Desktop app, open a new session
 - `plugin` and `team` are mutually exclusive. Running one removes the other's settings
 - Using `team` or `plugin` together with `global` yourself injects everything twice, so pick one
-- `personal` and `global` only work in local sessions; they don't carry over to cloud sessions
+- `plugin`, `personal` and `global` only work in local sessions. Cloud sessions don't install plugins that a repository's settings.json enables ([docs](https://code.claude.com/docs/en/cloud-environments#what-carries-over-from-your-setup))
 - To remove it, run the same mode with `--uninstall` appended. Working notes and snapshots are kept
 
 ### Installing for a team
 
-1. One person runs `install.sh plugin .` and opens a PR with the changes
-2. Once merged, members pull, open Claude Code and accept the folder trust prompt; the plugin installs automatically (python3 is required)
+- **Local sessions only**: one person runs `install.sh plugin .` and opens a PR. Once merged, each member pulls and runs `claude plugin install compact-restore@mt-takao --scope project` once (the repository settings enable the plugin but don't download it)
+- **Also in Claude Code Projects and cloud sessions**: run `install.sh team .` to commit the hook scripts directly. Members just pull
 
-To commit the hook scripts directly instead of using the plugin, use `install.sh team .`.
+Both require python3.
 
 ### Installing the plugin for yourself only
 
@@ -81,15 +81,15 @@ In [Claude Code Projects](https://code.claude.com/docs/en/claude-projects), the 
 
 | Target | Do the hooks run? | How context is kept |
 |---|---|---|
-| Threads (project with one repository) | Yes, with `plugin` or `team` | Snapshot right before auto-compaction, re-injected right after |
-| Threads (project with several repositories) | Only with `plugin` (hooks in a repository's settings.json aren't applied) | Same as above |
+| Threads (project with one repository) | Yes, with `team` (not `plugin`) | Snapshot right before auto-compaction, re-injected right after |
+| Threads (project with several repositories) | No (neither a repository's settings.json hooks nor its plugins are loaded) | Project memory and project instructions |
 | Coordinator (project conversation) | No | Project memory and project instructions |
 
 Set it up in three steps:
 
-1. **Run `install.sh plugin .` in a repository added to the project and commit it.** Threads install the plugin from the cloned repository's settings. With several repositories, one of them is enough for every thread
+1. **Run `install.sh team .` in a repository added to the project and commit it.** Threads run the hooks in the cloned repository's `.claude/settings.json`. Cloud sessions don't install plugins a repository enables, so `plugin` mode doesn't work there
 2. **Paste [`templates/project-instructions.md`](templates/project-instructions.md) into "Project settings > Memory > Project instructions".** The coordinator and every thread then get rules such as: record decisions in project memory, push progress often, and include the key points in completion reports
-3. **Run `/compact-restore:checkpoint` at a thread's breakpoints.** Besides updating the working notes, it pushes uncommitted changes and records decisions later threads need in project memory
+3. **Run `/checkpoint` at a thread's breakpoints.** Besides updating the working notes, it pushes uncommitted changes and records decisions later threads need in project memory
 
 In a cloud session, `.claude/context/` exists only inside that VM; other threads and recreated VMs don't see it. Within a thread, the roles are split as follows:
 
