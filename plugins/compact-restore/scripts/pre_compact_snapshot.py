@@ -132,6 +132,9 @@ def render(hook, prompts, files, todos, last_assistant, project_dir):
     L = [f"# 圧縮前スナップショット（{now} / trigger: {trigger}）", ""]
     if focus:
         L += [f"/compact の focus 指定: {focus}", ""]
+    sid = os.environ.get("CLAUDE_CODE_REMOTE_SESSION_ID", "")
+    if sid:  # クラウドセッション（Projects のスレッドを含む）: 元のトランスクリプトへのリンク
+        L += [f"元のセッション: https://claude.ai/code/{sid.replace('cse_', 'session_', 1)}", ""]
 
     L.append("## 進行中のタスクリスト")
     if todos:

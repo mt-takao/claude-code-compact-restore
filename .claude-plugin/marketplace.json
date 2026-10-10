@@ -1,0 +1,12 @@
+{
+  "name": "mt-takao",
+  "description": "Claude Code tools by mt-takao",
+  "owner": { "name": "Takao Mukai" },
+  "plugins": [
+    {
+      "name": "compact-restore",
+      "source": "./plugins/compact-restore",
+      "description": "Preserve working context across compaction: PreCompact snapshot, SessionStart re-injection, /compact-restore:checkpoint notes"
+    }
+  ]
+}

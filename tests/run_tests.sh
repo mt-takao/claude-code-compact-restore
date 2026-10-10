@@ -4,6 +4,10 @@
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+HOOKS="$ROOT/plugins/compact-restore/scripts"
+PLUGIN="$ROOT/plugins/compact-restore"
+# テスト自体がクラウドセッションで走ってもローカル扱いで検証する
+unset CLAUDE_CODE_REMOTE CLAUDE_CODE_REMOTE_SESSION_ID
 FIXTURE="$ROOT/tests/fixtures/transcript.jsonl"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -27,7 +31,7 @@ echo "■ PreCompact: スナップショット抽出"
 P="$WORK/snap"; new_repo "$P"; mkdir -p "$P/src"; echo x > "$P/src/Login.tsx"
 T=$(transcript_for "$P")
 echo "{\"transcript_path\":\"$T\",\"trigger\":\"manual\",\"custom_instructions\":\"決定事項を残す\"}" \
-  | CLAUDE_PROJECT_DIR="$P" python3 "$ROOT/hooks/pre_compact_snapshot.py"
+  | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
 S="$P/.claude/context/latest-snapshot.md"
 check "latest-snapshot.md が作られる"            test -f "$S"
 check "履歴が snapshots/ に保存される"            test -n "$(ls "$P/.claude/context/snapshots")"
@@ -37,16 +41,16 @@ check "tool_result・メタ・コマンドを除外する"      bash -c "! grep 
 check "編集ファイルを相対パスで記録する"          grep -q "^- src/Login.tsx" "$S"
 check "git ブランチを記録する"                    grep -q "feature/test" "$S"
 check "/compact の focus を記録する"              grep -q "決定事項を残す" "$S"
-check "壊れた入力でも exit 0（圧縮を止めない）"   bash -c "echo garbage | CLAUDE_PROJECT_DIR='$P' python3 '$ROOT/hooks/pre_compact_snapshot.py'"
+check "壊れた入力でも exit 0（圧縮を止めない）"   bash -c "echo garbage | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/pre_compact_snapshot.py'"
 
 echo "■ SessionStart: 注入内容"
 printf '## ゴール\n- テスト用ノート\n' > "$P/.claude/context/working-notes.md"
-check "compact: スナップショットを注入"   bash -c "echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$ROOT/hooks/post_compact_restore.py' | grep -q '圧縮前スナップショット'"
-check "compact: 作業ノートも注入"         bash -c "echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$ROOT/hooks/post_compact_restore.py' | grep -q 'テスト用ノート'"
-check "startup: 作業ノートのみ注入"       bash -c "out=\$(echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$ROOT/hooks/post_compact_restore.py'); echo \"\$out\" | grep -q 'テスト用ノート' && ! echo \"\$out\" | grep -q '圧縮前スナップショット'"
-check "出力が正しい JSON"                 bash -c "echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$ROOT/hooks/post_compact_restore.py' | python3 -c 'import json,sys; json.load(sys.stdin)'"
+check "compact: スナップショットを注入"   bash -c "echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/post_compact_restore.py' | grep -q '圧縮前スナップショット'"
+check "compact: 作業ノートも注入"         bash -c "echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/post_compact_restore.py' | grep -q 'テスト用ノート'"
+check "startup: 作業ノートのみ注入"       bash -c "out=\$(echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/post_compact_restore.py'); echo \"\$out\" | grep -q 'テスト用ノート' && ! echo \"\$out\" | grep -q '圧縮前スナップショット'"
+check "出力が正しい JSON"                 bash -c "echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/post_compact_restore.py' | python3 -c 'import json,sys; json.load(sys.stdin)'"
 E="$WORK/empty"; mkdir -p "$E"
-check "何もなければ何も出力しない"        bash -c "[ -z \"\$(echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$E' python3 '$ROOT/hooks/post_compact_restore.py')\" ]"
+check "何もなければ何も出力しない"        bash -c "[ -z \"\$(echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$E' python3 '$HOOKS/post_compact_restore.py')\" ]"
 
 echo "■ install: team"
 P="$WORK/team"; new_repo "$P"; mkdir -p "$P/.claude"
@@ -81,6 +85,50 @@ P="$WORK/anyproj"; mkdir -p "$P"; T=$(transcript_for "$P")
 check "任意のプロジェクトで退避できる"     bash -c "echo '{\"transcript_path\":\"$T\"}' | HOME='$FAKEHOME' CLAUDE_PROJECT_DIR='$P' sh -c 'python3 \"\$HOME/.claude/hooks/pre_compact_snapshot.py\"' && test -f '$P/.claude/context/latest-snapshot.md'"
 HOME="$FAKEHOME" XDG_CONFIG_HOME="$FAKEHOME/.config" bash "$ROOT/install.sh" global --uninstall >/dev/null
 check "uninstall で元の設定に戻る"         python3 -c "import json;assert json.load(open('$FAKEHOME/.claude/settings.json'))=={'model':'opus'}"
+
+echo "■ クラウドセッション・Projects スレッド"
+P="$WORK/cloud"; new_repo "$P"; T=$(transcript_for "$P")
+echo "{\"transcript_path\":\"$T\",\"trigger\":\"auto\"}" \
+  | CLAUDE_CODE_REMOTE=true CLAUDE_CODE_REMOTE_SESSION_ID=cse_abc123 CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
+check "スナップショットに元セッションの URL"   grep -q "https://claude.ai/code/session_abc123" "$P/.claude/context/latest-snapshot.md"
+run_start() {  # run_start <remote> <project-files-dir>
+  echo '{"source":"startup"}' | CLAUDE_CODE_REMOTE="$1" COMPACT_RESTORE_PROJECT_FILES="$2" CLAUDE_PROJECT_DIR="$WORK/empty" python3 "$HOOKS/post_compact_restore.py"
+}
+export -f run_start; export HOOKS WORK
+mkdir -p "$WORK/pf"
+check "クラウド: commit/push の案内を注入"         bash -c "run_start true '$WORK/none' | grep -q 'commit して push'"
+check "クラウド（Projects 以外）: メモリ案内なし"  bash -c "! run_start true '$WORK/none' | grep -q 'プロジェクトメモリ'"
+check "Projects スレッド: プロジェクトメモリ案内"  bash -c "run_start true '$WORK/pf' | grep -q 'プロジェクトメモリ'"
+check "ローカル: 案内を出さない"                   bash -c "[ -z \"\$(run_start '' '$WORK/pf')\" ]"
+
+echo "■ プラグイン構成"
+check "plugin.json と marketplace.json が正しい JSON" python3 -c "import json;json.load(open('$PLUGIN/.claude-plugin/plugin.json'));json.load(open('$ROOT/.claude-plugin/marketplace.json'))"
+check "マーケットプレイスの名前が一致"   python3 -c "import json;m=json.load(open('$ROOT/.claude-plugin/marketplace.json'));p=json.load(open('$PLUGIN/.claude-plugin/plugin.json'));assert m['plugins'][0]['name']==p['name']=='compact-restore' and m['name']=='mt-takao'"
+check "hooks.json のスクリプトが存在"     python3 -c "
+import json,re,os
+h=json.load(open('$PLUGIN/hooks/hooks.json'))['hooks']
+cmds=[x['command'] for g in h.values() for e in g for x in e['hooks']]
+assert len(cmds)==2
+for c in cmds:
+    path=re.search(r'\\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)\"',c).group(1); assert os.path.isfile(os.path.join('$PLUGIN',path)), path"
+if command -v claude >/dev/null 2>&1; then
+  check "claude plugin validate（マーケットプレイス）" bash -c "claude plugin validate '$ROOT' | grep -q 'Validation passed'"
+fi
+
+echo "■ install: plugin"
+P="$WORK/plugin"; new_repo "$P"; mkdir -p "$P/.claude"
+echo '{"permissions":{"allow":["Bash(npm test)"]}}' > "$P/.claude/settings.json"
+bash "$ROOT/install.sh" team "$P" >/dev/null           # team から切り替えるケース
+bash "$ROOT/install.sh" plugin "$P" >/dev/null; bash "$ROOT/install.sh" plugin "$P" >/dev/null
+check "マーケットプレイスとプラグインを登録" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert d['enabledPlugins']=={'compact-restore@mt-takao':True} and d['extraKnownMarketplaces']['mt-takao']['source']=={'source':'github','repo':'mt-takao/claude-code-compact-restore'}"
+check "直接登録のフックを外す（二重防止）"   python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert 'hooks' not in d and d['permissions']"
+check "team で置いたファイルを片付ける"      bash -c "[ ! -e '$P/.claude/hooks/pre_compact_snapshot.py' ] && [ ! -e '$P/.claude/commands/checkpoint.md' ]"
+check "運用ルールはプラグインのコマンド名"   bash -c "grep -q '/compact-restore:checkpoint' '$P/CLAUDE.md' && [ \"\$(grep -c 'コンテキスト復元（圧縮対策）' '$P/CLAUDE.md')\" = 1 ]"
+check ".claude/context/ が gitignore される"  bash -c "mkdir -p '$P/.claude/context' && touch '$P/.claude/context/x' && git -C '$P' check-ignore -q .claude/context/x"
+bash "$ROOT/install.sh" team "$P" >/dev/null
+check "plugin → team に戻すとプラグイン設定が消える" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert 'enabledPlugins' not in d and 'PreCompact' in d['hooks']"
+bash "$ROOT/install.sh" plugin "$P" >/dev/null; bash "$ROOT/install.sh" plugin "$P" --uninstall >/dev/null
+check "uninstall で元の設定に戻る"           python3 -c "import json;assert json.load(open('$P/.claude/settings.json'))=={'permissions':{'allow':['Bash(npm test)']}}"
 
 echo
 echo "結果: $PASS passed, $FAIL failed"
