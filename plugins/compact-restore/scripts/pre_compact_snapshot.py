@@ -13,8 +13,10 @@ PreCompact hook: 圧縮（/compact・auto-compact）の直前に作業状態を�
   - 直前の Claude の発言（どこまで進んでいたか）
   - git ブランチ / 未コミット変更
 """
+import html
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime
@@ -25,6 +27,9 @@ PROMPT_MAX_CHARS = 600       # 1指示あたりの最大文字数
 LAST_ASSISTANT_MAX = 1500    # 直前のClaude発言の最大文字数
 KEEP = 20                    # 保持するスナップショット数
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
+# Claude Code Projects のスレッドでは、人間の発言が <wake> の通知データに包まれて届く
+WAKE_MESSAGE = re.compile(r'<message\b[^>]*\btrigger="true"[^>]*>(.*?)</message>', re.S)
+WAKE_AUTHOR = re.compile(r'\bauthor="([^"]*)"')
 
 
 def read_hook_input():
@@ -62,6 +67,21 @@ def text_of(content):
     return ""
 
 
+def unwrap_wake(text):
+    """<wake> の通知から人間の発言だけを取り出す。人間の発言でなければ None"""
+    m = WAKE_MESSAGE.search(text)
+    if not m or 'from="human"' not in m.group(0):
+        return None
+    body = html.unescape(m.group(1)).strip()
+    author = WAKE_AUTHOR.search(m.group(0)[:m.group(0).find(">")])
+    return f"{author.group(1)}: {body}" if author and body else body or None
+
+
+def prompt_text(entry):
+    text = text_of(entry["message"]["content"]).strip()
+    return unwrap_wake(text) if text.startswith("<wake") else text
+
+
 def is_real_user_prompt(entry):
     """tool_result・メタ情報・コマンド出力・過去の圧縮サマリーを除いた、人間の指示だけを拾う"""
     if entry.get("type") != "user" or entry.get("isMeta") or entry.get("isCompactSummary"):
@@ -75,7 +95,8 @@ def is_real_user_prompt(entry):
     if not text:
         return False
     noise = ("<command-name>", "<local-command-stdout>", "<command-message>",
-             "Caveat:", "[Request interrupted")
+             "Caveat:", "[Request interrupted",
+             "<cross-session-message", "<task-notification")  # 他のセッション・ワーカーからの通知
     return not text.startswith(noise)
 
 
@@ -88,7 +109,9 @@ def extract(entries, project_dir):
     prompts, files, todos, last_assistant = [], [], None, ""
     for e in entries:
         if is_real_user_prompt(e):
-            prompts.append(text_of(e["message"]["content"]))
+            p = prompt_text(e)
+            if p:
+                prompts.append(p)
         if e.get("type") != "assistant":
             continue
         content = e.get("message", {}).get("content", [])
@@ -101,7 +124,9 @@ def extract(entries, project_dir):
             if not isinstance(b, dict) or b.get("type") != "tool_use":
                 continue
             name, inp = b.get("name"), b.get("input", {}) or {}
-            if name in EDIT_TOOLS:
+            if str(name).endswith("__reply") and isinstance(inp.get("text"), str):
+                last_assistant = inp["text"].strip() or last_assistant  # Projects でユーザーに送った返信
+            elif name in EDIT_TOOLS:
                 fp = inp.get("file_path") or inp.get("notebook_path")
                 if fp:
                     try:

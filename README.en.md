@@ -96,6 +96,7 @@ In a cloud session, `.claude/context/` exists only inside that VM; other threads
 - **Auto-compaction within the same thread**: restored from the snapshot and working notes, as before
 - **Information that crosses threads**: kept in project memory. The SessionStart hook detects the cloud environment and injects this guidance automatically
 - **Saved snapshots**: in the cloud they also record the original session URL, so you can trace the transcript later
+- **Updating the kit**: `team` mode copies the scripts into your repository, so run `install.sh team .` again in that repository and commit
 
 ## Usage
 
