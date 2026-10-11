@@ -35,6 +35,6 @@ tests/run_tests.sh                     # 自動テスト（Claude Code は起動
 
 ## 現在の状態（2026-10-11 時点）
 
-- `main`：v2（3モード、公開済み）
-- `claude/project-thread-qg6z1b`：v3（プラグイン化 + Claude Code Projects 対応）。PR でレビュー中・未マージ
+- `main`：v3（プラグイン化 + Claude Code Projects 対応）をマージ済み
+- Projects のスレッドで、`team` モードによる自動圧縮後の復元を確認済み（docs/development-log.md の「Projects スレッドでの検証」）
 - 次にやること・未解決事項は docs/development-log.md の「未解決・次にやること」を参照

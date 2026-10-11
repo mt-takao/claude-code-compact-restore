@@ -91,6 +91,12 @@ P="$WORK/cloud"; new_repo "$P"; T=$(transcript_for "$P")
 echo "{\"transcript_path\":\"$T\",\"trigger\":\"auto\"}" \
   | CLAUDE_CODE_REMOTE=true CLAUDE_CODE_REMOTE_SESSION_ID=cse_abc123 CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
 check "スナップショットに元セッションの URL"   grep -q "https://claude.ai/code/session_abc123" "$P/.claude/context/latest-snapshot.md"
+echo "{\"transcript_path\":\"$ROOT/tests/fixtures/projects-transcript.jsonl\",\"trigger\":\"auto\"}" \
+  | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
+S="$P/.claude/context/latest-snapshot.md"
+check "Projects: 通知の包みから発言だけを記録"   bash -c "grep -q 'Taro: 見出しの色は <h2> だけ変えて' '$S' && ! grep -qE '<wake|<project|cmsg_' '$S'"
+check "Projects: 人間以外の通知は記録しない"     bash -c "! grep -qE 'reaction|別セッションの報告' '$S'"
+check "Projects: 直前の発言に返信の本文を使う"   grep -q "h2 の色を変えました" "$S"
 run_start() {  # run_start <remote> <project-files-dir>
   echo '{"source":"startup"}' | CLAUDE_CODE_REMOTE="$1" COMPACT_RESTORE_PROJECT_FILES="$2" CLAUDE_PROJECT_DIR="$WORK/empty" python3 "$HOOKS/post_compact_restore.py"
 }
