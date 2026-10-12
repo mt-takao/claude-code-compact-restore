@@ -49,7 +49,7 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 - `plugin` and `team` are mutually exclusive. Running one removes the other's settings
 - Using `team` or `plugin` together with `global` yourself injects everything twice, so pick one
 - `plugin`, `personal` and `global` only work in local sessions. Cloud sessions don't install plugins that a repository's settings.json enables ([docs](https://code.claude.com/docs/en/cloud-environments#what-carries-over-from-your-setup))
-- To remove it, run the same mode with `--uninstall` appended. Working notes and snapshots are kept
+- To remove it, run the same mode with `--uninstall` appended. Working notes and snapshots are kept. While `.claude/context/` still exists, its ignore entry is kept as well (except in `global` mode); to remove that too, delete `.claude/context/` and run `--uninstall` again
 
 ### Installing for a team
 

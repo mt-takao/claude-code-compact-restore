@@ -73,17 +73,24 @@ check "再実行しても .gitignore の並びを変えない" cmp -s "$P/.gitig
 check "再実行しても CLAUDE.md の節の並びを変えない" cmp -s "$P/CLAUDE.md" "$WORK/claude-md.before"
 bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
 check "uninstall で後から足した節は残す"   bash -c "grep -q '^- after\$' '$P/CLAUDE.md' && grep -q '^## 後から足した節\$' '$P/CLAUDE.md'"
-check "uninstall で後から足した行は残す"   bash -c "grep -q '^node_modules/\$' '$P/.gitignore' && ! grep -q 'compact-restore-kit' '$P/.gitignore'"
+check "uninstall: ノートが残る間は除外を残す" bash -c "git -C '$P' check-ignore -q .claude/context/x && grep -q '^node_modules/\$' '$P/.gitignore'"
 check "uninstall で自分のフックだけ消える" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));h=d['hooks'];assert 'Stop' in h and 'PreCompact' not in h and 'SessionStart' not in h"
 check "uninstall で運用ルールが消える"     bash -c "! grep -q 'コンテキスト復元' '$P/CLAUDE.md' && grep -q 'keep me' '$P/CLAUDE.md'"
+rm -rf "$P/.claude/context"; bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
+check "uninstall: ノートを消せば除外も消える" bash -c "grep -q '^node_modules/\$' '$P/.gitignore' && ! grep -q 'compact-restore-kit' '$P/.gitignore'"
 
 echo "■ install: personal"
 P="$WORK/personal"; new_repo "$P"; echo "# shared" > "$P/CLAUDE.md"; git -C "$P" add -A && git -C "$P" commit -qm init
 bash "$ROOT/install.sh" personal "$P" >/dev/null
 check "git status に何も出ない"            test -z "$(git -C "$P" status --porcelain)"
 check "settings.local.json に登録"         grep -q pre_compact_snapshot "$P/.claude/settings.local.json"
+mkdir -p "$P/.claude/context"; echo note > "$P/.claude/context/working-notes.md"
 bash "$ROOT/install.sh" personal "$P" --uninstall >/dev/null
 check "uninstall 後に空ファイルを残さない" bash -c "[ ! -e '$P/.claude/settings.local.json' ] && [ ! -e '$P/CLAUDE.local.md' ]"
+check "uninstall 後も残ったノートは git に出ない" bash -c "[ -f '$P/.claude/context/working-notes.md' ] && [ -z \"\$(git -C '$P' status --porcelain)\" ]"
+check "uninstall 後の除外は context だけ"   bash -c "grep -q '^.claude/context/\$' '$P/.git/info/exclude' && ! grep -q 'CLAUDE.local.md' '$P/.git/info/exclude'"
+rm -rf "$P/.claude/context"; bash "$ROOT/install.sh" personal "$P" --uninstall >/dev/null
+check "ノートを消して再実行すると除外も消える" bash -c "! grep -q 'compact-restore-kit' '$P/.git/info/exclude'"
 
 echo "■ install: global"
 FAKEHOME="$WORK/home"; mkdir -p "$FAKEHOME/.claude"; echo '{"model":"opus"}' > "$FAKEHOME/.claude/settings.json"
