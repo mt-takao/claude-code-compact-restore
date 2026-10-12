@@ -33,8 +33,8 @@ tests/run_tests.sh                     # 自動テスト（Claude Code は起動
 - リポジトリは公開。社内のプロダクト名・個人情報・ローカルパスを含めない
 - コミットの作者は Takao Mukai。プラグインの挙動を変えたら plugin.json の version を上げる
 
-## 現在の状態（2026-10-12 時点）
+## 現在の状態（2026-10-13 時点）
 
 - `main`：v3.0.5。Projects のスレッドの発言・進捗表示、TaskCreate / TaskUpdate のタスクリストに対応済み
-- 実機で確認済み：`plugin` モード（ローカル）、`team` モード（Projects のスレッドの自動圧縮、ローカルの手動 `/compact`）、進捗表示とタスクリストの退避（docs/development-log.md の「Projects スレッドでの検証」「ローカルでのタスクリストの検証」）
+- 実機で確認済み：4 つのモードすべて（`plugin` はローカル、`team` は Projects のスレッドの自動圧縮とローカルの手動 `/compact`、`personal` と `global` はローカル）、進捗表示とタスクリストの退避（docs/development-log.md の各「検証」の節）
 - 次にやること・未解決事項は docs/development-log.md の「未解決・次にやること」を参照

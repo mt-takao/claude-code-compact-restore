@@ -71,7 +71,9 @@ printf '\n## 後から足した節\n- after\n' >> "$P/CLAUDE.md"; cp "$P/CLAUDE.
 bash "$ROOT/install.sh" team "$P" >/dev/null
 check "再実行しても .gitignore の並びを変えない" cmp -s "$P/.gitignore" "$WORK/gitignore.before"
 check "再実行しても CLAUDE.md の節の並びを変えない" cmp -s "$P/CLAUDE.md" "$WORK/claude-md.before"
+echo '#!/bin/sh' > "$P/.claude/hooks/other.sh"
 bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
+check "uninstall: 空になったフォルダは消し、ほかのファイルがあれば残す" bash -c "[ ! -d '$P/.claude/commands' ] && [ -f '$P/.claude/hooks/other.sh' ]"
 check "uninstall で後から足した節は残す"   bash -c "grep -q '^- after\$' '$P/CLAUDE.md' && grep -q '^## 後から足した節\$' '$P/CLAUDE.md'"
 check "uninstall: ノートが残る間は除外を残す" bash -c "git -C '$P' check-ignore -q .claude/context/x && grep -q '^node_modules/\$' '$P/.gitignore'"
 check "uninstall で自分のフックだけ消える" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));h=d['hooks'];assert 'Stop' in h and 'PreCompact' not in h and 'SessionStart' not in h"
@@ -102,6 +104,19 @@ P="$WORK/anyproj"; mkdir -p "$P"; T=$(transcript_for "$P")
 check "任意のプロジェクトで退避できる"     bash -c "echo '{\"transcript_path\":\"$T\"}' | HOME='$FAKEHOME' CLAUDE_PROJECT_DIR='$P' sh -c 'python3 \"\$HOME/.claude/hooks/pre_compact_snapshot.py\"' && test -f '$P/.claude/context/latest-snapshot.md'"
 HOME="$FAKEHOME" XDG_CONFIG_HOME="$FAKEHOME/.config" bash "$ROOT/install.sh" global --uninstall >/dev/null
 check "uninstall で元の設定に戻る"         python3 -c "import json;assert json.load(open('$FAKEHOME/.claude/settings.json'))=={'model':'opus'}"
+check "uninstall で空のフォルダを残さない" bash -c "[ ! -d '$FAKEHOME/.claude/hooks' ] && [ ! -d '$FAKEHOME/.claude/commands' ]"
+
+echo "■ install: もとから空の設定項目"
+P="$WORK/emptykeys"; new_repo "$P"; mkdir -p "$P/.claude"
+echo '{"enabledPlugins":{},"extraKnownMarketplaces":{},"hooks":{"Stop":[]}}' > "$P/.claude/settings.json"
+cp "$P/.claude/settings.json" "$WORK/emptykeys.before"
+same_json() { python3 -c "import json,sys;assert json.load(open(sys.argv[1]))==json.load(open(sys.argv[2]))" "$1" "$2"; }
+bash "$ROOT/install.sh" team "$P" >/dev/null
+check "install: もとから空の項目を消さない" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert d['enabledPlugins']=={} and d['extraKnownMarketplaces']=={} and d['hooks']['Stop']==[] and 'PreCompact' in d['hooks']"
+bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
+check "team: uninstall で元の設定と一致"    same_json "$P/.claude/settings.json" "$WORK/emptykeys.before"
+bash "$ROOT/install.sh" plugin "$P" >/dev/null; bash "$ROOT/install.sh" plugin "$P" --uninstall >/dev/null
+check "plugin: uninstall でもとから空のフックを消さない" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert d['hooks']=={'Stop':[]}"
 
 echo "■ クラウドセッション・Projects スレッド"
 P="$WORK/cloud"; new_repo "$P"; T=$(transcript_for "$P")
