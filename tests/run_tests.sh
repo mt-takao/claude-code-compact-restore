@@ -101,6 +101,12 @@ P="$WORK/cloud"; new_repo "$P"; T=$(transcript_for "$P")
 echo "{\"transcript_path\":\"$T\",\"trigger\":\"auto\"}" \
   | CLAUDE_CODE_REMOTE=true CLAUDE_CODE_REMOTE_SESSION_ID=cse_abc123 CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
 check "スナップショットに元セッションの URL"   grep -q "https://claude.ai/code/session_abc123" "$P/.claude/context/latest-snapshot.md"
+echo "{\"transcript_path\":\"$ROOT/tests/fixtures/tasks-transcript.jsonl\",\"trigger\":\"manual\"}" \
+  | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
+S="$P/.claude/context/latest-snapshot.md"
+check "TaskCreate / TaskUpdate のタスクリストを記録する" bash -c "grep -qF -- '- [x] スキーマを調べる' '$S' && grep -qF -- '- [→] 移行スクリプトを書いて試す' '$S' && grep -qF -- '- [ ] 本番で実行する' '$S'"
+check "削除したタスクは記録しない"                bash -c "! grep -q '不要になった作業' '$S'"
+check "作成の記録がないタスクは番号で残す"        grep -qF -- '- [→] タスク #9' "$S"
 echo "{\"transcript_path\":\"$ROOT/tests/fixtures/projects-transcript.jsonl\",\"trigger\":\"auto\"}" \
   | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
 S="$P/.claude/context/latest-snapshot.md"

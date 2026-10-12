@@ -1,0 +1,15 @@
+{"type":"user","message":{"role":"user","content":"移行作業をタスクに分けて進めて"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"c1","name":"TaskCreate","input":{"subject":"スキーマを調べる","description":"現行のスキーマを確認する"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"c1","content":"Task #1 created successfully: スキーマを調べる"}]},"toolUseResult":{"task":{"id":"1","subject":"スキーマを調べる"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"c2","name":"TaskCreate","input":{"subject":"移行スクリプトを書く","description":"x"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"c2","content":"Task #2 created successfully: 移行スクリプトを書く"}]},"toolUseResult":{"task":{"id":"2","subject":"移行スクリプトを書く"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"c3","name":"TaskCreate","input":{"subject":"本番で実行する","description":"x"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"c3","content":"Task #3 created successfully: 本番で実行する"}]},"toolUseResult":"Task #3 created successfully: 本番で実行する"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"c4","name":"TaskCreate","input":{"subject":"不要になった作業","description":"x"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"c4","content":"Task #4 created successfully: 不要になった作業"}]},"toolUseResult":{"task":{"id":"4","subject":"不要になった作業"}}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"u1","name":"TaskUpdate","input":{"taskId":"1","status":"completed"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"u1","content":"Updated task #1 status"}]},"toolUseResult":{"success":true,"taskId":"1"}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"u2","name":"TaskUpdate","input":{"taskId":"2","status":"in_progress","subject":"移行スクリプトを書いて試す"}}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"u3","name":"TaskUpdate","input":{"taskId":"4","status":"deleted"}}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"u4","name":"TaskUpdate","input":{"taskId":"9","status":"in_progress"}}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"2 つ目を進めています。"}]}}
