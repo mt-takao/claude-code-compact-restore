@@ -91,9 +91,15 @@ Claude Code Projects（プロジェクト会話＝コーディネーター + ス
 - 記録がないときの文言を「（TodoWrite の記録なし）」から「（タスクリストの記録なし）」に変えた
 - v3.0.4 を `team` モードの f1-scroll-snap に入れ、`CLAUDE_CODE_ENABLE_TODO_TOOLS=1` のローカルのセッションで確認した（2026-10-12、手動 `/compact`）。TaskCreate 3 回・TaskUpdate 2 回のタスクリストが `[x]`・`[x]`・`[ ]` で記録された
 
+## personal モードの検証（2026-10-12）
+
+- `personal` モードで、ローカルのセッションの手動 `/compact` をまたいだ退避と再注入を確認した。導入したファイルは `.git/info/exclude` で除外され、`git status` には作業で作ったファイルだけが出た
+- 見つかった問題：アンインストールすると除外設定も消えるため、残した `.claude/context/`（ユーザー指示の原文を含む）が `git status` に未追跡として現れ、誤ってコミットされるおそれがあった。`team` / `plugin` / `personal` では、`.claude/context/` が残っている間はその除外だけ残すようにした。フォルダを削除してもう一度 `--uninstall` を実行すると除外も消える
+- `global` は、ユーザー全体の設定を元に戻すことを優先して除外を消し、各プロジェクトに残った `.claude/context/` が表示されるようになることを注意として表示する
+
 ## 未解決・次にやること
 
-1. **実環境での検証（未確認の残り）**：`personal` / `global` モードの実機確認。古い方式の TodoWrite は自動テストのみ（いまの Claude Code では既定で使われない）
+1. **実環境での検証（未確認の残り）**：`global` モードの実機確認（`personal` は確認済み）。古い方式の TodoWrite は自動テストのみ（いまの Claude Code では既定で使われない）
 2. transcript の形式は Claude Code の内部仕様なので、将来の変更で抽出が壊れていないか定期的に確認する
 3. Windows（WSL 以外）では `python3` を `python` / `py` に書き換える必要がある。インストーラでの自動判定は未対応
 

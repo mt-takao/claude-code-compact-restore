@@ -133,7 +133,7 @@ def update_guidance(path, install, checkpoint="/checkpoint"):
 
 
 # ---------- ignore ----------
-def update_ignore(path, entries, install, header):
+def update_ignore(path, entries, install, header, kept=False):
     lines = path.read_text().splitlines() if path.exists() else []
     # 既存の自分のブロックを除去。再インストール時は同じ位置で差し替える（ほかの行の並びを変えない）
     out, skip, placed = [], False, False
@@ -159,7 +159,21 @@ def update_ignore(path, entries, install, header):
         out += ["", f"{MARK} ({header})", *entries]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(out).strip("\n") + "\n")
-    ok(f"{path} の除外設定を{'追加' if install else '削除'}")
+    if kept:
+        ok(f"{path} の除外設定は .claude/context/ だけ残しました（作業ノート・スナップショットが残っているため）")
+    else:
+        ok(f"{path} の除外設定を{'追加' if install else '削除'}")
+
+
+def remove_ignore(path, proj, header):
+    """アンインストール時の除外設定。.claude/context/ が残っている間は、その除外だけ残す
+    （ユーザー指示の原文を含むファイルが git status に現れ、誤ってコミットされるのを防ぐ）"""
+    ctx = proj / ".claude" / "context"
+    if ctx.is_dir() and any(ctx.iterdir()):
+        update_ignore(path, [".claude/context/"], True, header, kept=True)
+        return True
+    update_ignore(path, [], False, header)
+    return False
 
 
 def global_excludes_file():
@@ -212,6 +226,7 @@ def main():
     ap.add_argument("--uninstall", action="store_true")
     a = ap.parse_args()
     install = not a.uninstall
+    kept = False  # アンインストール後も .claude/context/ の除外を残したか
 
     if a.mode == "global":
         home = Path.home() / ".claude"
@@ -220,6 +235,9 @@ def main():
         update_settings(home / "settings.json", "$HOME/.claude/hooks", install)
         update_guidance(home / "CLAUDE.md", install)
         update_ignore(global_excludes_file(), [".claude/context/"], install, "global")
+        if not install:
+            print("  （注意）各プロジェクトに残っている .claude/context/ は、今後 git status に表示されます。"
+                  "不要なら削除し、残す場合はコミットしないよう注意してください")
     else:
         proj = Path(a.project).resolve()
         if not proj.is_dir():
@@ -231,10 +249,12 @@ def main():
                 copy_files(claude / "hooks", claude / "commands", False)
             update_plugin_settings(claude / "settings.json", a.repo, install)
             update_guidance(proj / "CLAUDE.md", install, "/compact-restore:checkpoint")
-            update_ignore(proj / ".gitignore", [".claude/context/"], install, "plugin")
             if install:
+                update_ignore(proj / ".gitignore", [".claude/context/"], True, "plugin")
                 untrack_context(proj)
-            finish(install, "/compact-restore:checkpoint")
+            else:
+                kept = remove_ignore(proj / ".gitignore", proj, "plugin")
+            finish(install, "/compact-restore:checkpoint", kept)
             return
         copy_files(claude / "hooks", claude / "commands", install)
         prefix = "$CLAUDE_PROJECT_DIR/.claude/hooks"
@@ -243,30 +263,36 @@ def main():
                 update_ignore(proj / ".gitignore", [], False, "plugin")
             update_settings(claude / "settings.json", prefix, install)
             update_guidance(proj / "CLAUDE.md", install)
-            update_ignore(proj / ".gitignore", [".claude/context/"], install, "team")
             if install:
+                update_ignore(proj / ".gitignore", [".claude/context/"], True, "team")
                 untrack_context(proj)
+            else:
+                kept = remove_ignore(proj / ".gitignore", proj, "team")
         else:
             update_settings(claude / "settings.local.json", prefix, install)
             update_guidance(proj / "CLAUDE.local.md", install)
             git_dir = proj / ".git"
-            if git_dir.is_dir():
+            if git_dir.is_dir() and install:
                 update_ignore(git_dir / "info" / "exclude", [
                     ".claude/context/", ".claude/settings.local.json", "CLAUDE.local.md",
                     ".claude/hooks/pre_compact_snapshot.py", ".claude/hooks/post_compact_restore.py",
-                    ".claude/commands/checkpoint.md"], install, "personal")
+                    ".claude/commands/checkpoint.md"], True, "personal")
+            elif git_dir.is_dir():
+                kept = remove_ignore(git_dir / "info" / "exclude", proj, "personal")
             else:
                 print("  （.git が見つからないため git 除外設定はスキップ）")
 
-    finish(install, "/checkpoint")
+    finish(install, "/checkpoint", kept)
 
 
-def finish(install, checkpoint):
+def finish(install, checkpoint, kept=False):
     if install:
         print("完了。Claude Code を再起動（Desktop は新しいセッションを開始）してください。")
         print(f"作業ノートは初回の {checkpoint} で .claude/context/working-notes.md に作られます。")
     else:
         print("アンインストール完了。.claude/context/（作業ノート・スナップショット）は残しています。")
+        if kept:
+            print("除外設定も消すには、.claude/context/ を削除してから、もう一度 --uninstall を実行してください。")
 
 
 if __name__ == "__main__":

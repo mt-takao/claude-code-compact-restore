@@ -51,7 +51,7 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 - `plugin` と `team` は切り替え式です。どちらかを実行すると、もう一方の設定は取り除かれます
 - `team`・`plugin` と `global` を同じ人が併用すると注入が二重になるので、どちらか一方にしてください
 - `plugin`・`personal`・`global` はローカルのセッションでのみ動きます。クラウドセッションは、リポジトリの settings.json で有効化したプラグインをインストールしないためです（[公式ドキュメント](https://code.claude.com/docs/ja/cloud-environments#what-carries-over-from-your-setup)）
-- 取り除くときは、同じモードで末尾に `--uninstall` を付けて実行します。作業ノートとスナップショットは残ります
+- 取り除くときは、同じモードで末尾に `--uninstall` を付けて実行します。作業ノートとスナップショットは残ります。`.claude/context/` が残っている間は、その除外設定だけ残します（`global` を除く）。除外設定も消すには、`.claude/context/` を削除してからもう一度 `--uninstall` を実行します
 
 ### チームで導入する場合
 
