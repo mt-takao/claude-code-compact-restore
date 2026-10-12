@@ -114,6 +114,7 @@ check "Projects: 通知の包みから発言だけを記録"   bash -c "grep -q 
 check "Projects: 人間以外の通知は記録しない"     bash -c "! grep -qE 'reaction|別セッションの報告' '$S'"
 check "Projects: 直前の発言に返信の本文を使う"   grep -q "h2 の色を変えました" "$S"
 check "Projects: 最新の進捗表示を記録する"       bash -c "grep -q '✱ calendar.html を作っている' '$S' && ! grep -q '古い進捗' '$S'"
+check "Projects: 進捗表示があれば空のタスクリスト欄を出さない" bash -c "! grep -q '進行中のタスクリスト' '$S'"
 run_start() {  # run_start <remote> <project-files-dir>
   echo '{"source":"startup"}' | CLAUDE_CODE_REMOTE="$1" COMPACT_RESTORE_PROJECT_FILES="$2" CLAUDE_PROJECT_DIR="$WORK/empty" python3 "$HOOKS/post_compact_restore.py"
 }

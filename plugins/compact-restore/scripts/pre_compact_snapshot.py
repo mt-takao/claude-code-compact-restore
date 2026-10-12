@@ -227,14 +227,14 @@ def render(hook, prompts, files, memories, todos, last_assistant, progress, proj
     if sid:  # クラウドセッション（Projects のスレッドを含む）: 元のトランスクリプトへのリンク
         L += [f"元のセッション: https://claude.ai/code/{sid.replace('cse_', 'session_', 1)}", ""]
 
-    L.append("## 進行中のタスクリスト")
     if todos:
+        L.append("## 進行中のタスクリスト")
         mark = {"completed": "[x]", "in_progress": "[→]", "pending": "[ ]"}
         for t in todos:
             L.append(f"- {mark.get(t.get('status'), '[ ]')} {t.get('content', '')}")
-    else:
-        L.append("- （タスクリストの記録なし）")
-    L.append("")
+        L.append("")
+    elif not progress:  # Projects のスレッドは進捗表示で足りるので、空の欄は出さない
+        L += ["## 進行中のタスクリスト", "- （タスクリストの記録なし）", ""]
     if progress:
         L.append("## スレッドの進捗表示（最新。✓ 完了 / ✱ 作業中 / ○ 未着手）")
         L.append(clip(progress, PROGRESS_MAX))
