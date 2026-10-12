@@ -8,7 +8,7 @@ PreCompact hook: 圧縮（/compact・auto-compact）の直前に作業状態を�
 
 抽出する情報（LLMを使わず transcript から機械的に取れるもの）:
   - 直近のユーザー指示
-  - 最新の TodoWrite（タスクリストと進捗）
+  - タスクリストと進捗（最新の TodoWrite、または TaskCreate / TaskUpdate の積み重ね）
   - Claude Code Projects のスレッドの進捗表示（最新の update_status）
   - 編集・作成したファイル（一時フォルダの作業ファイルは除き、メモリは別に記録）
   - 直前の Claude の発言（どこまで進んでいたか）
@@ -33,6 +33,7 @@ EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # Claude Code Projects のスレッドでは、人間の発言が <wake> の通知データに包まれて届く
 WAKE_MESSAGE = re.compile(r'<message\b[^>]*\btrigger="true"[^>]*>(.*?)</message>', re.S)
 WAKE_AUTHOR = re.compile(r'\bauthor="([^"]*)"')
+TASK_CREATED = re.compile(r"Task #(\S+) created")
 # プロジェクト外の編集のうち、使い捨ての作業ファイルとみなす置き場所
 TEMP_ROOTS = tuple(dict.fromkeys(
     str(Path(d).resolve()) for d in (tempfile.gettempdir(), "/tmp", "/var/tmp", "/var/folders")))
@@ -135,13 +136,36 @@ def touch(items, item):
     items.append(item)  # 最後に触ったものが末尾
 
 
+def created_task_ids(entry):
+    """TaskCreate の結果（tool_result）から {tool_use_id: タスクID} を取り出す"""
+    content = entry.get("message", {}).get("content")
+    if entry.get("type") != "user" or not isinstance(content, list):
+        return {}
+    task = (entry.get("toolUseResult") or {}).get("task") if isinstance(entry.get("toolUseResult"), dict) else None
+    found = {}
+    for b in content:
+        if not isinstance(b, dict) or b.get("type") != "tool_result":
+            continue
+        m = TASK_CREATED.search(text_of(b.get("content")))
+        tid = (task or {}).get("id") if isinstance(task, dict) else None
+        tid = tid or (m.group(1).rstrip(":") if m else None)
+        if tid:
+            found[b.get("tool_use_id")] = str(tid)
+    return found
+
+
 def extract(entries, project_dir):
     prompts, files, memories, todos, last_assistant, progress = [], [], [], None, "", ""
+    tasks, creating = {}, {}  # TaskCreate / TaskUpdate: {タスクID: 項目}、{tool_use_id: 作成中の項目}
     for e in entries:
         if is_real_user_prompt(e):
             p = prompt_text(e)
             if p:
                 prompts.append(p)
+        for use_id, tid in created_task_ids(e).items():
+            if use_id in creating:
+                tasks[tid] = creating.pop(use_id)
+                todos = list(tasks.values())
         if e.get("type") != "assistant":
             continue
         content = e.get("message", {}).get("content", [])
@@ -166,6 +190,20 @@ def extract(entries, project_dir):
                         touch(memories if kind == "memory" else files, shown)
             elif name == "TodoWrite":
                 todos = inp.get("todos")
+            elif name == "TaskCreate":
+                creating[b.get("id")] = {"content": inp.get("subject") or inp.get("description") or "",
+                                         "status": "pending"}
+            elif name == "TaskUpdate" and inp.get("taskId") is not None:
+                tid = str(inp["taskId"])
+                if inp.get("status") == "deleted":
+                    tasks.pop(tid, None)
+                else:  # 圧縮より前に作られて記録に残っていないタスクも、番号で残す
+                    item = tasks.setdefault(tid, {"content": f"タスク #{tid}", "status": "pending"})
+                    if inp.get("subject"):
+                        item["content"] = inp["subject"]
+                    if inp.get("status"):
+                        item["status"] = inp["status"]
+                todos = list(tasks.values())
     return prompts[-RECENT_USER_PROMPTS:], files, memories, todos, last_assistant, progress
 
 
@@ -195,7 +233,7 @@ def render(hook, prompts, files, memories, todos, last_assistant, progress, proj
         for t in todos:
             L.append(f"- {mark.get(t.get('status'), '[ ]')} {t.get('content', '')}")
     else:
-        L.append("- （TodoWrite の記録なし）")
+        L.append("- （タスクリストの記録なし）")
     L.append("")
     if progress:
         L.append("## スレッドの進捗表示（最新。✓ 完了 / ✱ 作業中 / ○ 未着手）")
