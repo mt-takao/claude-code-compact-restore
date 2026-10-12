@@ -115,9 +115,15 @@ def strip_section(text):
 
 def update_guidance(path, install, checkpoint="/checkpoint"):
     text = path.read_text(encoding="utf-8") if path.exists() else ""
-    cleaned = strip_section(text) if SECTION in text else text
-    if install:
-        cleaned = cleaned.rstrip() + "\n" + (KIT / "templates" / "CLAUDE.md.snippet").read_text(encoding="utf-8").replace("{CHECKPOINT}", checkpoint)
+    snippet = (KIT / "templates" / "CLAUDE.md.snippet").read_text(encoding="utf-8").replace("{CHECKPOINT}", checkpoint)
+    if install and SECTION in text:
+        # 再インストール時は同じ位置で差し替える（後ろに足された節の並びを変えない）
+        body = re.compile(rf"{re.escape(SECTION)}\n.*?(?=\n+## |\n*\Z)", re.S)
+        cleaned = body.sub(lambda _: snippet.strip("\n"), text, count=1)
+    else:
+        cleaned = strip_section(text) if SECTION in text else text
+        if install:
+            cleaned = cleaned.rstrip() + "\n" + snippet
     if not install and not cleaned.strip() and path.exists():
         path.unlink()
     elif cleaned.strip() or path.exists():
