@@ -1,6 +1,6 @@
 {
   "name": "compact-restore",
-  "version": "3.0.2",
+  "version": "3.0.3",
   "description": "Preserve working context across Claude Code compaction: PreCompact snapshot, SessionStart re-injection, checkpoint notes",
   "author": { "name": "Takao Mukai" },
   "homepage": "https://github.com/mt-takao/claude-code-compact-restore",
