@@ -1,6 +1,7 @@
 # 開発ログ
 
-claude.ai のチャット（2026-09-25〜10-11）で、この仕組みを設計・実装したときの経緯をまとめたもの。
+claude.ai のチャット（2026-09-25〜10-11）と、その後の Claude Code Projects のスレッド（〜10-13）で、この仕組みを設計・実装したときの経緯をまとめたもの。
+版ごとの変更点の一覧は [CHANGELOG.md](../CHANGELOG.md) にある。
 Claude Code で作業を引き継ぐときの前提資料として使う。
 
 ## 着想
@@ -27,7 +28,7 @@ Claude Code で作業を引き継ぐときの前提資料として使う。
 - インストーラを3モード化：`team` / `personal` / `global`、`--uninstall`、v1 からの移行（コミット済みノートの追跡解除）
 - 公開用に再構成：MIT ライセンス、GitHub Actions（Ubuntu・macOS × Python 3.9・3.13）、自動テスト 29 項目、日英 README
 
-### v3（ブランチ `claude/project-thread-qg6z1b`、PR でレビュー中）
+### v3（2026-10-11 に PR #1 でマージ。以降 v3.0.5 まで改修）
 
 Claude Code Projects（プロジェクト会話＝コーディネーター + スレッド＝クラウドセッション）では、圧縮は自動のみで手動の `/compact` は使わない。ドキュメントを確認して見つかった問題と対応：
 
