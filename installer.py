@@ -49,19 +49,34 @@ def hook_config(prefix):
 
 def strip_our_hooks(settings):
     """このキット由来のフック（v1含む）を取り除く"""
-    hooks = settings.get("hooks", {})
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    changed = False  # 自分のフックを外した場合だけ、空になった入れ物を片付ける（もとから空の項目は触らない）
     for event in list(hooks):
-        groups = []
+        if not isinstance(hooks[event], list):
+            continue
+        groups, touched = [], False
         for g in hooks[event]:
-            g["hooks"] = [h for h in g.get("hooks", [])
-                          if not any(s in h.get("command", "") for s in SCRIPTS)]
-            if g["hooks"]:
+            before = g.get("hooks", []) if isinstance(g, dict) else None
+            if not isinstance(before, list):
                 groups.append(g)
-        if groups:
-            hooks[event] = groups
-        else:
-            del hooks[event]
-    if not hooks:
+                continue
+            after = [h for h in before if not (
+                isinstance(h, dict) and any(s in h.get("command", "") for s in SCRIPTS))]
+            if len(after) != len(before):
+                touched = True
+                if not after:
+                    continue
+                g["hooks"] = after
+            groups.append(g)
+        if touched:
+            changed = True
+            if groups:
+                hooks[event] = groups
+            else:
+                del hooks[event]
+    if changed and not hooks:
         settings.pop("hooks", None)
 
 
@@ -69,9 +84,9 @@ def strip_plugin(settings):
     """plugin モードで追加したマーケットプレイスと有効化設定を取り除く"""
     for key, name in (("enabledPlugins", PLUGIN_ID), ("extraKnownMarketplaces", MARKETPLACE)):
         section = settings.get(key)
-        if isinstance(section, dict):
-            section.pop(name, None)
-            if not section:
+        if isinstance(section, dict) and name in section:
+            del section[name]
+            if not section:  # 自分の登録を外して空になった場合だけ消す（もとから空の項目は触らない）
                 settings.pop(key, None)
 
 
@@ -215,6 +230,9 @@ def copy_files(hooks_dir, cmds_dir, install):
         for p in [*(hooks_dir / s for s in SCRIPTS), cmds_dir / "checkpoint.md"]:
             if p.exists():
                 p.unlink()
+        for d in (hooks_dir, cmds_dir):  # 空になったフォルダは片付ける（ほかのファイルがあれば残す）
+            if d.is_dir() and not any(d.iterdir()):
+                d.rmdir()
         ok("スクリプトと /checkpoint を削除")
 
 
