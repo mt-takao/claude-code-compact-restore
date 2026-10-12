@@ -129,11 +129,14 @@ def update_guidance(path, install, checkpoint="/checkpoint"):
 # ---------- ignore ----------
 def update_ignore(path, entries, install, header):
     lines = path.read_text().splitlines() if path.exists() else []
-    # 既存の自分のブロックを除去
-    out, skip = [], False
+    # 既存の自分のブロックを除去。再インストール時は同じ位置で差し替える（ほかの行の並びを変えない）
+    out, skip, placed = [], False, False
     for ln in lines:
         if ln.strip() == f"{MARK} ({header})":
             skip = True
+            if install and not placed:
+                out += [ln.strip(), *entries]
+                placed = True
             continue
         if skip and (ln.strip() == "" or ln.startswith("#")):
             skip = False
@@ -146,7 +149,7 @@ def update_ignore(path, entries, install, header):
         ".claude/context/snapshots/", ".claude/context/latest-snapshot.md")]
     while out and not out[-1].strip():
         out.pop()
-    if install:
+    if install and not placed:
         out += ["", f"{MARK} ({header})", *entries]
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(out).strip("\n") + "\n")
