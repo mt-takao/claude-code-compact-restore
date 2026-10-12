@@ -20,7 +20,7 @@ Post-compaction summaries tend to lose concrete details such as which task was i
 | Component | When it runs | What it does |
 |---|---|---|
 | `checkpoint` command | Manually, at natural breakpoints | Updates the working notes `.claude/context/working-notes.md` (goal, decisions, rejected options, current state, next step, open questions). `/compact-restore:checkpoint` when installed as a plugin, `/checkpoint` otherwise |
-| `PreCompact` hook | Automatically, right before compaction | Saves a snapshot of the task list (TodoWrite), recent user prompts, edited files, git state and the last assistant message |
+| `PreCompact` hook | Automatically, right before compaction | Saves a snapshot of the task list (TodoWrite), recent user prompts, edited files (excluding scratch files in temp folders), updated memory files, git state and the last assistant message |
 | `SessionStart` hook | Automatically, at session start and right after compaction | Injects the working notes. Right after compaction, it also injects the snapshot. In cloud sessions it also injects guidance on where to record things |
 
 Working notes and snapshots are **personal**, so they are never committed to git in any install mode.

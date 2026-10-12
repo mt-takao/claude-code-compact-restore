@@ -9,7 +9,7 @@ PreCompact hook: 圧縮（/compact・auto-compact）の直前に作業状態を�
 抽出する情報（LLMを使わず transcript から機械的に取れるもの）:
   - 直近のユーザー指示
   - 最新の TodoWrite（タスクリストと進捗）
-  - 編集・作成したファイル
+  - 編集・作成したファイル（一時フォルダの作業ファイルは除き、メモリは別に記録）
   - 直前の Claude の発言（どこまで進んでいたか）
   - git ブランチ / 未コミット変更
 """
@@ -19,6 +19,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -30,6 +31,9 @@ EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # Claude Code Projects のスレッドでは、人間の発言が <wake> の通知データに包まれて届く
 WAKE_MESSAGE = re.compile(r'<message\b[^>]*\btrigger="true"[^>]*>(.*?)</message>', re.S)
 WAKE_AUTHOR = re.compile(r'\bauthor="([^"]*)"')
+# プロジェクト外の編集のうち、使い捨ての作業ファイルとみなす置き場所
+TEMP_ROOTS = tuple(dict.fromkeys(
+    str(Path(d).resolve()) for d in (tempfile.gettempdir(), "/tmp", "/var/tmp", "/var/folders")))
 
 
 def read_hook_input():
@@ -105,8 +109,32 @@ def clip(s, n):
     return s if len(s) <= n else s[:n] + " …(省略)"
 
 
+def classify(fp, project_dir):
+    """編集したパスを (種類, 表示名) にする。種類は file / memory / None（記録しない）"""
+    try:
+        path = Path(fp).resolve()
+    except Exception:
+        return "file", fp
+    try:
+        return "file", str(path.relative_to(project_dir))
+    except ValueError:
+        pass
+    if "memory" in path.parts:  # 自動メモリ・プロジェクトメモリ。一時フォルダの下にあっても残す
+        return "memory", str(path)
+    if "scratchpad" in path.parts or any(
+            str(path) == r or str(path).startswith(r + os.sep) for r in TEMP_ROOTS):
+        return None, None
+    return "file", str(path)  # 別のリポジトリなど、プロジェクト外でも作業対象のファイル
+
+
+def touch(items, item):
+    if item in items:
+        items.remove(item)
+    items.append(item)  # 最後に触ったものが末尾
+
+
 def extract(entries, project_dir):
-    prompts, files, todos, last_assistant = [], [], None, ""
+    prompts, files, memories, todos, last_assistant = [], [], [], None, ""
     for e in entries:
         if is_real_user_prompt(e):
             p = prompt_text(e)
@@ -129,16 +157,12 @@ def extract(entries, project_dir):
             elif name in EDIT_TOOLS:
                 fp = inp.get("file_path") or inp.get("notebook_path")
                 if fp:
-                    try:
-                        fp = str(Path(fp).resolve().relative_to(project_dir))
-                    except Exception:
-                        pass
-                    if fp in files:
-                        files.remove(fp)
-                    files.append(fp)  # 最後に触ったものが末尾
+                    kind, shown = classify(fp, project_dir)
+                    if kind:
+                        touch(memories if kind == "memory" else files, shown)
             elif name == "TodoWrite":
                 todos = inp.get("todos")
-    return prompts[-RECENT_USER_PROMPTS:], files, todos, last_assistant
+    return prompts[-RECENT_USER_PROMPTS:], files, memories, todos, last_assistant
 
 
 def git(args, cwd):
@@ -150,7 +174,7 @@ def git(args, cwd):
         return ""
 
 
-def render(hook, prompts, files, todos, last_assistant, project_dir):
+def render(hook, prompts, files, memories, todos, last_assistant, project_dir):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     trigger = hook.get("trigger", "unknown")
     focus = (hook.get("custom_instructions") or "").strip()
@@ -181,6 +205,10 @@ def render(hook, prompts, files, todos, last_assistant, project_dir):
     L.append("## このセッションで編集したファイル（最後に触った順で末尾）")
     L += [f"- {f}" for f in files[-30:]] or ["- （なし）"]
     L.append("")
+    if memories:
+        L.append("## このセッションで更新したメモリ（プロジェクト外。記憶済みの決定事項の手がかり）")
+        L += [f"- {m}" for m in memories[-10:]]
+        L.append("")
 
     branch = git(["branch", "--show-current"], project_dir)
     status = git(["status", "--short"], project_dir)
@@ -212,8 +240,8 @@ def main():
     snap_dir.mkdir(parents=True, exist_ok=True)
 
     entries = load_transcript(hook.get("transcript_path"))
-    prompts, files, todos, last_assistant = extract(entries, project_dir)
-    md = render(hook, prompts, files, todos, last_assistant, project_dir)
+    prompts, files, memories, todos, last_assistant = extract(entries, project_dir)
+    md = render(hook, prompts, files, memories, todos, last_assistant, project_dir)
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     (snap_dir / f"{stamp}.md").write_text(md, encoding="utf-8")
