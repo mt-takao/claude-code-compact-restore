@@ -9,6 +9,7 @@ PreCompact hook: 圧縮（/compact・auto-compact）の直前に作業状態を�
 抽出する情報（LLMを使わず transcript から機械的に取れるもの）:
   - 直近のユーザー指示
   - 最新の TodoWrite（タスクリストと進捗）
+  - Claude Code Projects のスレッドの進捗表示（最新の update_status）
   - 編集・作成したファイル（一時フォルダの作業ファイルは除き、メモリは別に記録）
   - 直前の Claude の発言（どこまで進んでいたか）
   - git ブランチ / 未コミット変更
@@ -26,6 +27,7 @@ from pathlib import Path
 RECENT_USER_PROMPTS = 8      # 残すユーザー指示の数
 PROMPT_MAX_CHARS = 600       # 1指示あたりの最大文字数
 LAST_ASSISTANT_MAX = 1500    # 直前のClaude発言の最大文字数
+PROGRESS_MAX = 1500          # スレッドの進捗表示の最大文字数
 KEEP = 20                    # 保持するスナップショット数
 EDIT_TOOLS = {"Edit", "Write", "MultiEdit", "NotebookEdit"}
 # Claude Code Projects のスレッドでは、人間の発言が <wake> の通知データに包まれて届く
@@ -134,7 +136,7 @@ def touch(items, item):
 
 
 def extract(entries, project_dir):
-    prompts, files, memories, todos, last_assistant = [], [], [], None, ""
+    prompts, files, memories, todos, last_assistant, progress = [], [], [], None, "", ""
     for e in entries:
         if is_real_user_prompt(e):
             p = prompt_text(e)
@@ -154,6 +156,8 @@ def extract(entries, project_dir):
             name, inp = b.get("name"), b.get("input", {}) or {}
             if str(name).endswith("__reply") and isinstance(inp.get("text"), str):
                 last_assistant = inp["text"].strip() or last_assistant  # Projects でユーザーに送った返信
+            elif str(name).endswith("__update_status") and isinstance(inp.get("text"), str):
+                progress = inp["text"].strip() or progress  # Projects のスレッドの進捗表示（チェックリスト）
             elif name in EDIT_TOOLS:
                 fp = inp.get("file_path") or inp.get("notebook_path")
                 if fp:
@@ -162,7 +166,7 @@ def extract(entries, project_dir):
                         touch(memories if kind == "memory" else files, shown)
             elif name == "TodoWrite":
                 todos = inp.get("todos")
-    return prompts[-RECENT_USER_PROMPTS:], files, memories, todos, last_assistant
+    return prompts[-RECENT_USER_PROMPTS:], files, memories, todos, last_assistant, progress
 
 
 def git(args, cwd):
@@ -174,7 +178,7 @@ def git(args, cwd):
         return ""
 
 
-def render(hook, prompts, files, memories, todos, last_assistant, project_dir):
+def render(hook, prompts, files, memories, todos, last_assistant, progress, project_dir):
     now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     trigger = hook.get("trigger", "unknown")
     focus = (hook.get("custom_instructions") or "").strip()
@@ -193,6 +197,10 @@ def render(hook, prompts, files, memories, todos, last_assistant, project_dir):
     else:
         L.append("- （TodoWrite の記録なし）")
     L.append("")
+    if progress:
+        L.append("## スレッドの進捗表示（最新。✓ 完了 / ✱ 作業中 / ○ 未着手）")
+        L.append(clip(progress, PROGRESS_MAX))
+        L.append("")
 
     L.append("## 直近のユーザー指示（古い→新しい）")
     if prompts:
@@ -240,8 +248,8 @@ def main():
     snap_dir.mkdir(parents=True, exist_ok=True)
 
     entries = load_transcript(hook.get("transcript_path"))
-    prompts, files, memories, todos, last_assistant = extract(entries, project_dir)
-    md = render(hook, prompts, files, memories, todos, last_assistant, project_dir)
+    prompts, files, memories, todos, last_assistant, progress = extract(entries, project_dir)
+    md = render(hook, prompts, files, memories, todos, last_assistant, progress, project_dir)
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     (snap_dir / f"{stamp}.md").write_text(md, encoding="utf-8")
