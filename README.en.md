@@ -8,6 +8,8 @@
 A set of hooks and a slash command that keep your working context intact when Claude Code runs `/compact` or auto-compaction.
 It works in local sessions, and via `team` mode in [Claude Code Projects](https://code.claude.com/docs/en/claude-projects) threads with one repository (cloud sessions that only auto-compact).
 
+The latest version is v3.0.5. See the [changelog](#changelog) for what changed since v1.
+
 ## Why
 
 Post-compaction summaries tend to lose concrete details such as which task was in progress, which files were touched, and why an approach was rejected. This tool fills that gap by combining two things:
@@ -25,6 +27,45 @@ Post-compaction summaries tend to lose concrete details such as which task was i
 
 Working notes and snapshots are **personal**, so they are never committed to git in any install mode.
 
+### Example snapshot
+
+It is saved to `.claude/context/latest-snapshot.md` right before compaction and injected right after it (history lives in `.claude/context/snapshots/`).
+Sections with nothing recorded (task list, memory, git, and so on) are omitted or shown as "none". The headings are written in Japanese; the translation below is for reference.
+
+````markdown
+# Pre-compaction snapshot (2026-10-12 21:04:13 / trigger: manual)
+
+/compact focus: keep the decisions
+
+## Task list in progress
+- [x] Fix loading the config file
+- [→] Add tests
+- [ ] Update the README
+
+## Recent user prompts (oldest → newest)
+1. It crashes when the config file is missing, please fix it
+2. Add tests too
+
+## Files edited in this session (most recent last)
+- src/config.py
+- tests/test_config.py
+
+## Git state
+- Branch: `fix-config`
+- Uncommitted changes:
+```
+ M src/config.py
+?? tests/test_config.py
+```
+
+## Claude's last message before compaction (how far it got)
+I made it fall back to defaults when the config file is missing. Next, I'll add tests.
+````
+
+- In cloud sessions, the URL of the original session follows the title
+- In Projects threads, the "thread progress checklist" (✓ done / ✱ in progress / ○ not started) takes the place of the task list, and prompts are recorded as "sender: body"
+- When memory files outside the project were updated, an "updated memory" section is added
+
 ## Installation
 
 Requires Python 3.9 or later (standard library only). git is optional, but when present it enables recording git state and the ignore settings.
@@ -35,12 +76,14 @@ cd /path/to/your-project
 bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 ```
 
-| Mode | Use case | Where settings go | git handling |
-|---|---|---|---|
-| `plugin` | The team uses it (local sessions) | `.claude/settings.json` (plugin registration) / `CLAUDE.md` | The registration is committed and shared (notes stay personal) |
-| `team` | The team uses it, including in Claude Code Projects and cloud sessions | `.claude/settings.json` / `CLAUDE.md` | The setup is committed and shared (notes stay personal) |
-| `personal` | Only you, in this project | `.claude/settings.local.json` / `CLAUDE.local.md` | Kept out of git entirely via `.git/info/exclude` |
-| `global` | You, in all your projects | `~/.claude/settings.json` / `~/.claude/CLAUDE.md` | Added to git's global ignore file |
+| Mode | Use case | Where it runs | Where settings go | git handling |
+|---|---|---|---|---|
+| `plugin` | The team uses it (local sessions) | Local only | `.claude/settings.json` (plugin registration) / `CLAUDE.md` | The registration is committed and shared (notes stay personal) |
+| `team` | The team uses it, including in Claude Code Projects and cloud sessions | Local, cloud, and Projects threads | `.claude/settings.json` / `.claude/hooks/` / `.claude/commands/` / `CLAUDE.md` | The setup is committed and shared (notes stay personal) |
+| `personal` | Only you, in this project | Local only | `.claude/settings.local.json` / `.claude/hooks/` / `.claude/commands/` / `CLAUDE.local.md` | Kept out of git entirely via `.git/info/exclude` |
+| `global` | You, in all your projects | Local only | `~/.claude/settings.json` / `~/.claude/hooks/` / `~/.claude/commands/` / `~/.claude/CLAUDE.md` | Added to git's global ignore file |
+
+If unsure: choose `team` for Claude Code Projects or the cloud, `plugin` to roll it out to a team that works locally, and `personal` or `global` for yourself only.
 
 `global` mode does not take a project path (`bash install.sh global`).
 
@@ -49,7 +92,37 @@ bash ~/tools/claude-code-compact-restore/install.sh <mode> .
 - `plugin` and `team` are mutually exclusive. Running one removes the other's settings
 - Using `team` or `plugin` together with `global` yourself injects everything twice, so pick one
 - `plugin`, `personal` and `global` only work in local sessions. Cloud sessions don't install plugins that a repository's settings.json enables ([docs](https://code.claude.com/docs/en/cloud-environments#what-carries-over-from-your-setup))
-- To remove it, run the same mode with `--uninstall` appended. Working notes and snapshots are kept. While `.claude/context/` still exists, its ignore entry is kept as well (except in `global` mode); to remove that too, delete `.claude/context/` and run `--uninstall` again
+
+### Uninstalling
+
+Run the same mode with `--uninstall` appended.
+
+```bash
+bash ~/tools/claude-code-compact-restore/install.sh <mode> . --uninstall
+```
+
+- Working notes and snapshots (`.claude/context/`) are kept
+- While `.claude/context/` still exists, its ignore entry is kept as well (except in `global` mode), so files containing your prompts verbatim aren't committed by accident. To remove that entry too, delete `.claude/context/` and run `--uninstall` again
+- `global` removes the ignore entry too, so any `.claude/context/` left in your projects will show up in `git status` (a warning is printed)
+- Settings files return to their state before installation. Only entries and folders emptied by removing the kit are deleted; entries that were already empty and other files are left alone (one exception: in `plugin` mode, if `enabledPlugins` / `extraKnownMarketplaces` was already empty before installing, the whole entry is removed; this has no effect on behavior)
+
+### Updating the kit
+
+| Mode | How to update |
+|---|---|
+| `team` | `git pull` your clone of the kit, run `install.sh team .` again in your repository, and commit (the scripts are copied into the repository) |
+| `personal` / `global` | `git pull` your clone of the kit and run `install.sh` again in the same mode |
+| `plugin` / plugin installed directly | Fetch the latest version with `claude plugin marketplace update mt-takao`, then run `claude plugin update compact-restore@mt-takao` and restart Claude Code |
+
+Re-running never duplicates settings and keeps the order of your existing `.gitignore` and CLAUDE.md.
+
+### Migrating from an earlier version
+
+To migrate from v1 or v2, just run `install.sh` in the mode you want.
+
+- The "コンテキスト復元（圧縮対策）" (context restore) section in CLAUDE.md is replaced with the current rules, and the lines v1 wrote to `.gitignore` are removed
+- Working notes and snapshots committed under v1 are untracked from git (the files stay on disk; this takes effect with your next commit)
+- For Claude Code Projects, switch from `plugin` to `team` (`install.sh team .` removes the `plugin` settings)
 
 ### Installing for a team
 
@@ -129,13 +202,25 @@ If you need an earlier state, point to the file for that date and time in `.clau
 - **The transcript format is internal to Claude Code.** Future changes may prevent some information from being extracted. Even then, the hooks never exit with an error (always exit 0) and never block compaction itself
 - **Watch the Python command name.** On Windows (outside WSL), if `python3` isn't available, change the command in the settings file to `python` or `py`
 
+## Changelog
+
+The main changes are below. See [CHANGELOG.en.md](CHANGELOG.en.md) for details.
+
+| Version | Main changes |
+|---|---|
+| v1 | Three layers: working notes, a pre-compaction snapshot, and re-injection after compaction (unreleased) |
+| v2 | Working notes became personal and are injected by the `SessionStart` hook. Three modes, `team` / `personal` / `global`, plus `--uninstall` |
+| v3.0 | Distributed as a plugin (`plugin` mode). Support for Claude Code Projects and cloud sessions |
+| v3.0.1–v3.0.5 | Record Projects thread messages and progress checklists, and TaskCreate / TaskUpdate task lists. Leave scratch files out |
+| Installer fixes | Re-installing keeps the order of `.gitignore` and CLAUDE.md. Uninstalling keeps the `.claude/context/` ignore entry and restores the original settings |
+
 ## Development
 
 ```bash
 bash tests/run_tests.sh
 ```
 
-The tests don't launch the real Claude Code. They simulate the JSON passed to the hooks and the conversation transcript, and verify extraction, injection, the cloud-session guidance, the plugin layout, and install/uninstall for all four modes. When the `claude` command is available, they also run `claude plugin validate`.
+GitHub Actions runs them on Ubuntu and macOS with Python 3.9 and 3.13. The tests don't launch the real Claude Code. They simulate the JSON passed to the hooks and the conversation transcript, and verify extraction, injection, the cloud-session guidance, the plugin layout, and install/uninstall for all four modes. When the `claude` command is available, they also run `claude plugin validate`.
 
 ## References
 

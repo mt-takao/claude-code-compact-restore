@@ -20,6 +20,7 @@ templates/CLAUDE.md.snippet            # 導入先 CLAUDE.md に追記する運�
 templates/project-instructions.md      # Claude Code Projects の「プロジェクト指示」用文例
 installer.py / install.sh              # plugin / team / personal / global の4モード + --uninstall
 tests/run_tests.sh                     # 自動テスト（Claude Code は起動せず入力を模擬）
+CHANGELOG.md / CHANGELOG.en.md         # 版ごとの変更点（日英）
 ```
 
 ## 開発ルール
@@ -29,7 +30,7 @@ tests/run_tests.sh                     # 自動テスト（Claude Code は起動
 - フックは失敗しても必ず exit 0（圧縮やセッション開始を妨げない）
 - インストーラは冪等にする。既存の設定・CLAUDE.md・.gitignore を壊さずマージし、`--uninstall` で元に戻せること
 - 作業ノート・スナップショット（`.claude/context/`）はどのモードでもコミットさせない
-- README は日本語（README.md）と英語（README.en.md）の両方を更新する
+- README は日本語（README.md）と英語（README.en.md）の両方を更新する。挙動やインストーラを変えたら CHANGELOG.md と CHANGELOG.en.md にも追記する
 - リポジトリは公開。社内のプロダクト名・個人情報・ローカルパスを含めない
 - コミットの作者は Takao Mukai。プラグインの挙動を変えたら plugin.json の version を上げる
 
