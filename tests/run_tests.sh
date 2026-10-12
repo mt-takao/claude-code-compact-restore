@@ -67,9 +67,12 @@ check "既存の CLAUDE.md ルールを保持"      grep -q "keep me" "$P/CLAUDE
 check "運用ルールが1回だけ入る"            test "$(grep -c 'コンテキスト復元（圧縮対策）' "$P/CLAUDE.md")" = 1
 check ".claude/context/ が gitignore される" bash -c "mkdir -p '$P/.claude/context' && touch '$P/.claude/context/x' && git -C '$P' check-ignore -q .claude/context/x"
 printf '\nnode_modules/\n' >> "$P/.gitignore"; cp "$P/.gitignore" "$WORK/gitignore.before"
+printf '\n## 後から足した節\n- after\n' >> "$P/CLAUDE.md"; cp "$P/CLAUDE.md" "$WORK/claude-md.before"
 bash "$ROOT/install.sh" team "$P" >/dev/null
 check "再実行しても .gitignore の並びを変えない" cmp -s "$P/.gitignore" "$WORK/gitignore.before"
+check "再実行しても CLAUDE.md の節の並びを変えない" cmp -s "$P/CLAUDE.md" "$WORK/claude-md.before"
 bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
+check "uninstall で後から足した節は残す"   bash -c "grep -q '^- after\$' '$P/CLAUDE.md' && grep -q '^## 後から足した節\$' '$P/CLAUDE.md'"
 check "uninstall で後から足した行は残す"   bash -c "grep -q '^node_modules/\$' '$P/.gitignore' && ! grep -q 'compact-restore-kit' '$P/.gitignore'"
 check "uninstall で自分のフックだけ消える" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));h=d['hooks'];assert 'Stop' in h and 'PreCompact' not in h and 'SessionStart' not in h"
 check "uninstall で運用ルールが消える"     bash -c "! grep -q 'コンテキスト復元' '$P/CLAUDE.md' && grep -q 'keep me' '$P/CLAUDE.md'"
