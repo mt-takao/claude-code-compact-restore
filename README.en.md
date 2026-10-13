@@ -222,6 +222,8 @@ bash tests/run_tests.sh
 
 GitHub Actions runs them on Ubuntu and macOS with Python 3.9 and 3.13. The tests don't launch the real Claude Code. They simulate the JSON passed to the hooks and the conversation transcript, and verify extraction, injection, the cloud-session guidance, the plugin layout, and install/uninstall for all four modes. When the `claude` command is available, they also run `claude plugin validate`.
 
+This repository also has the kit installed in `team` mode (`.claude/hooks/`, `.claude/commands/`, `.claude/settings.json`). It is not part of what gets distributed; it protects work done in this repository itself. After changing the scripts or commands in `plugins/compact-restore/`, re-run `bash install.sh team .` to sync them. The tests fail if they drift.
+
 ## References
 
 - [Article on Claude Code context and memory management (koromo.io, Japanese)](https://koromo.io/blog/claude-code-context-memory/) — the inspiration for this tool

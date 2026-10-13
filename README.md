@@ -224,6 +224,8 @@ bash tests/run_tests.sh
 
 GitHub Actions で Ubuntu・macOS × Python 3.9・3.13 の組み合わせで実行しています。テストでは実際の Claude Code は起動しません。フックに渡される JSON と会話記録を模擬して、抽出処理・注入処理・クラウドセッションでの案内・プラグイン構成・4 モードのインストールとアンインストールを検証します。`claude` コマンドがあれば `claude plugin validate` も実行します。
 
+このリポジトリ自体にも `team` モードで導入しています（`.claude/hooks/`・`.claude/commands/`・`.claude/settings.json`）。配布物ではなく、このリポジトリで作業するときの圧縮対策です。`plugins/compact-restore/` のスクリプトやコマンドを変えたら `bash install.sh team .` を再実行して同期してください。ずれているとテストが失敗します。
+
 ## 参考
 
 - [Claude Code のコンテキスト・メモリ管理について解説した記事（koromo.io）](https://koromo.io/blog/claude-code-context-memory/) — 本ツールの着想元
