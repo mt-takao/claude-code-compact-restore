@@ -50,6 +50,7 @@ Claude Code Projects（プロジェクト会話＝コーディネーター + ス
 - 圧縮サマリーと食い違う場合はスナップショットの具体的記録を優先し、推測せずユーザーに確認するよう注入文で指示する
 - コマンド名：プラグイン導入時は `/compact-restore:checkpoint`、直接導入時は `/checkpoint`
 - Projects・クラウドセッション向けは `team` モード。公式ドキュメント（cloud-environments の「What carries over from your setup」）に、クラウドセッションはリポジトリの `enabledPlugins` / `extraKnownMarketplaces` のプラグインをインストールせず、リポジトリ複数のセッションはリポジトリのフックを読まないと明記されているため（2026-10-11 に確認）
+- kit のリポジトリ自体にも `team` モードで導入する（2026-10-13）。このリポジトリを置く Projects のスレッドでも圧縮対策を効かせるため。導入物は配布版のコピーなので、スクリプトを変えたら `bash install.sh team .` で同期し、テストで一致を確かめる
 
 ## 却下した案
 

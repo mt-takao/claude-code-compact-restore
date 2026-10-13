@@ -2,3 +2,6 @@ __pycache__/
 *.pyc
 .DS_Store
 .claude/context/
+
+# compact-restore-kit (team)
+.claude/context/
