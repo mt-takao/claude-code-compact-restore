@@ -157,6 +157,7 @@ cmds=[x['command'] for g in h.values() for e in g for x in e['hooks']]
 assert len(cmds)==2
 for c in cmds:
     path=re.search(r'\\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)\"',c).group(1); assert os.path.isfile(os.path.join('$PLUGIN',path)), path"
+check "このリポジトリの team 導入物が配布版と同じ" bash -c "cmp -s '$ROOT/.claude/hooks/pre_compact_snapshot.py' '$PLUGIN/scripts/pre_compact_snapshot.py' && cmp -s '$ROOT/.claude/hooks/post_compact_restore.py' '$PLUGIN/scripts/post_compact_restore.py' && cmp -s '$ROOT/.claude/commands/checkpoint.md' '$PLUGIN/commands/checkpoint.md'"
 if command -v claude >/dev/null 2>&1; then
   check "claude plugin validate（マーケットプレイス）" bash -c "claude plugin validate '$ROOT' | grep -q 'Validation passed'"
 fi

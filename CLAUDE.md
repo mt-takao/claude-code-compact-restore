@@ -33,9 +33,16 @@ CHANGELOG.md / CHANGELOG.en.md         # 版ごとの変更点（日英）
 - README は日本語（README.md）と英語（README.en.md）の両方を更新する。挙動やインストーラを変えたら CHANGELOG.md と CHANGELOG.en.md にも追記する
 - リポジトリは公開。社内のプロダクト名・個人情報・ローカルパスを含めない
 - コミットの作者は Takao Mukai。プラグインの挙動を変えたら plugin.json の version を上げる
+- このリポジトリ自体にも team モードで導入している（`.claude/hooks/`・`.claude/commands/`・`.claude/settings.json`）。`plugins/compact-restore/` のスクリプトやコマンドを変えたら `bash install.sh team .` を再実行して同期する（テストで一致を確認している）
 
 ## 現在の状態（2026-10-13 時点）
 
 - `main`：v3.0.5。Projects のスレッドの発言・進捗表示、TaskCreate / TaskUpdate のタスクリストに対応済み
 - 実機で確認済み：4 つのモードすべて（`plugin` はローカル、`team` は Projects のスレッドの自動圧縮とローカルの手動 `/compact`、`personal` と `global` はローカル）、進捗表示とタスクリストの退避（docs/development-log.md の各「検証」の節）
 - 次にやること・未解決事項は docs/development-log.md の「未解決・次にやること」を参照
+
+## コンテキスト復元（圧縮対策）
+- 作業ノート `.claude/context/working-notes.md` は、セッション開始時と圧縮後にフックで自動注入される
+- 大きな区切り（設計確定・タスク完了・方針転換）のたびに `/checkpoint` で作業ノートを更新する
+- 圧縮直後は「圧縮前スナップショット」と作業ノートを突き合わせてから再開し、食い違いは推測せずユーザーに確認する
+- クラウドセッション（Claude Code Projects のスレッドを含む）では、途中経過をこまめに commit・push し、スレッドをまたいで必要な決定事項はプロジェクトメモリに記憶する
