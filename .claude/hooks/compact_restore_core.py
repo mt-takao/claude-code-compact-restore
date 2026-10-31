@@ -213,8 +213,11 @@ class Injection:
         self.intro, self.snap_head, self.snap = "", [], []
         self.snap_path = None
         self.notes_title, self.notes, self.notes_path = "", "", None
+        self._notes_full = ""
         self.tail = ""
         self.notice = ""
+        self._notes_kept = None  # 作業ノート・直前の発言を、元の本文の先頭から何文字残しているか
+        self._last_full, self._last_kept = "", None
 
     def set_snapshot(self, intro, md, path):
         self.intro, self.snap_path = intro, path
@@ -222,6 +225,7 @@ class Injection:
 
     def set_notes(self, title, body, path):
         self.notes_title, self.notes, self.notes_path = title, body, path
+        self._notes_full = body
 
     def render(self):
         parts = []
@@ -269,21 +273,30 @@ class Injection:
         return True
 
     def _shrink_notes(self, over):
-        if not self.notes or len(self.notes) <= 200:
+        """作業ノートの末尾を削り、全文の場所を添える。毎回元の本文から切り直すので注記が積み重ならない"""
+        full = self._notes_full
+        kept = len(full) if self._notes_kept is None else self._notes_kept
+        pointer = f"\n…(以下省略。全文は {self.notes_path})"
+        keep = max(200, kept - over - len(pointer))
+        if not full or keep >= kept:
             return False
-        keep = max(200, len(self.notes) - over - 80)
-        self.notes = self.notes[:keep].rstrip() + f"\n…(以下省略。全文は {self.notes_path})"
+        self._notes_kept = keep
+        self.notes = full[:keep].rstrip() + pointer
         return True
 
     def _shrink_last(self, over):
         s = self._section(H_LAST)
         if not s or len(s) < 2:
             return False
-        body = "\n".join(s[1:]).strip()
-        if len(body) <= 200:
+        if self._last_kept is None:
+            self._last_full = "\n".join(s[1:]).strip()
+        full = self._last_full
+        kept = len(full) if self._last_kept is None else self._last_kept
+        keep = max(200, kept - over - 10)
+        if keep >= kept:
             return False
-        keep = max(200, len(body) - over - 40)
-        s[1:] = [body[:keep].rstrip() + " …(省略)", ""]
+        self._last_kept = keep
+        s[1:] = [full[:keep].rstrip() + " …(省略)", ""]
         return True
 
     def text(self):
@@ -301,7 +314,11 @@ class Injection:
         for step in steps:
             while len(out) > limit and step(len(out) - limit):
                 trimmed = True
-                out = self.render()
+                shorter = self.render()
+                if len(shorter) >= len(out):  # 縮まなければ次の手段へ（無限ループを防ぐ）
+                    out = shorter
+                    break
+                out = shorter
         if trimmed and self.snap_path:
             self.notice = f"\n\n（注入量の上限のため一部を省略しました。全文は {self.snap_path}）"
             out = self.render()

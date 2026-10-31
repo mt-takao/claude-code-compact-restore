@@ -99,6 +99,13 @@ check "タスクと最新の指示は残す"                  bash -c "out=\$(in
 check "古い指示と編集ファイルの一覧から削る"      bash -c "out=\$(inject '$P'); ! echo \"\$out\" | grep -q '古い指示1 ' && ! echo \"\$out\" | grep -q 'src/file0.py'"
 check "作業ノートの先頭は残し、省略時は全文の場所を添える" bash -c "out=\$(inject '$P'); echo \"\$out\" | grep -q 'ノートの先頭' && echo \"\$out\" | grep -q 'latest-snapshot.md）'"
 check "COMPACT_RESTORE_MAX_CHARS で上限を変えられる" bash -c "[ \$(COMPACT_RESTORE_MAX_CHARS=3000 inject '$P' | python3 -c 'import sys; print(len(sys.stdin.read()))') -le 3000 ]"
+LONG="$WORK/a-very-long-folder-name-like-macos-var-folders/xx/abcdefghijklmnopqrstuvwx/T/tmp.ABCDEFGHIJ/budget"
+mkdir -p "$LONG/.claude/context"; cp "$P/.claude/context/"*.md "$LONG/.claude/context/"
+check "長いパス・小さい上限でも止まらずに終わる"   python3 -c "
+import os,subprocess,sys
+env=dict(os.environ,COMPACT_RESTORE_MAX_CHARS='1500',CLAUDE_PROJECT_DIR='$LONG')
+r=subprocess.run([sys.executable,'$HOOKS/post_compact_restore.py'],input=b'{\"source\":\"compact\"}',env=env,capture_output=True,timeout=20)
+import json; t=json.loads(r.stdout)['hookSpecificOutput']['additionalContext']; assert len(t)<=1500, len(t)"
 
 echo "■ 記録の形式"
 P="$WORK/drift"; new_repo "$P"
