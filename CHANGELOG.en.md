@@ -6,6 +6,15 @@ The plugin version is the `version` in [`plugin.json`](plugins/compact-restore/.
 Fixes that touch only the installer don't bump it and are listed as "Installer".
 The design history and real-world verification results are in [docs/development-log.md](docs/development-log.md) (Japanese).
 
+## v3.1.0 (2026-10-31)
+
+- The injected text is now kept within 9,000 characters so it stays under the hook output limit (10,000 characters). Previously up to 12,000 characters of snapshot plus 6,000 of working notes could be injected, and anything over the limit was replaced by a 2,000-character preview. When it's too long, the lowest-priority parts are trimmed first (updated memory → edited files → uncommitted file list → older prompts → end of the working notes → last message) and the location of the full text is added. Change the limit with the `COMPACT_RESTORE_MAX_CHARS` environment variable
+- Snapshot sections are now ordered tasks → recent prompts → last message → git → edited files → memory, so the key points come first. Section names and contents are unchanged
+- When the transcript can be read but no prompt or message can be extracted from it (the format may have changed in a Claude Code update), or when it is missing or compressed, the snapshot starts with a ⚠ line giving the reason. The git state is still recorded
+- The working notes are injected with their last-modified time
+- The `checkpoint` command now writes the tool and time of the last update on the first line of the notes and avoids tool-specific command names (preparing to share notes with other tools)
+- The scripts are split into the hook entry points, a shared core (`compact_restore_core.py`) and the transcript reader (`compact_restore_claude.py`). For `team` / `personal` / `global`, re-running the installer places the new files too. No `__pycache__` is created in the install location
+
 ## Installer (2026-10-13, PR #10 and #11)
 
 - After uninstalling, the ignore entry for `.claude/context/` (working notes and snapshots) is kept while that folder still exists, so files containing your prompts verbatim don't show up in `git status` and get committed by accident (`team` / `plugin` / `personal`). Delete the folder and run `--uninstall` again to remove the entry too

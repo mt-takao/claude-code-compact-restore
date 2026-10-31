@@ -25,17 +25,17 @@ Claude Code で `/compact` や自動圧縮（auto-compact）が走っても、�
 |---|---|---|
 | `checkpoint` コマンド | 作業の区切りで手動実行 | 作業ノート `.claude/context/working-notes.md` を更新する（ゴール・決定事項・却下案・現在地・次の一手・未解決の論点）。プラグイン導入時は `/compact-restore:checkpoint`、それ以外は `/checkpoint` |
 | `PreCompact` フック | 圧縮の直前に自動 | タスクリスト（TodoWrite、または TaskCreate / TaskUpdate。Projects のスレッドでは進捗表示）・直近のユーザー指示・編集ファイル（一時フォルダの作業ファイルは除く）・更新したメモリ・git 状態・直前の発言をスナップショットとして退避する |
-| `SessionStart` フック | セッション開始時と圧縮直後に自動 | 作業ノートを注入する。圧縮直後はスナップショットもあわせて注入する。クラウドセッションでは記録先の案内も注入する |
+| `SessionStart` フック | セッション開始時と圧縮直後に自動 | 作業ノートを注入する。圧縮直後はスナップショットもあわせて注入する。クラウドセッションでは記録先の案内も注入する。フック出力の上限（10,000 文字）を超えないよう、優先度の低いもの（更新したメモリ → 編集ファイル → 未コミットの一覧 → 古い指示 → 作業ノートの末尾）から削る |
 
 作業ノートとスナップショットは**個人のもの**なので、どの導入モードでも git にはコミットされません。
 
 ### スナップショットの例
 
 圧縮の直前に `.claude/context/latest-snapshot.md` に保存され、圧縮の直後に注入されます（履歴は `.claude/context/snapshots/`）。
-記録がない項目（タスクリスト・メモリ・git など）は省略されるか「（なし）」と表示されます。
+記録がない項目（タスクリスト・メモリ・git など）は省略されるか「（なし）」と表示されます。見出しは、注入量が多いときにも要点が残るよう、タスク・指示・直前の発言を先に並べています。
 
 ````markdown
-# 圧縮前スナップショット（2026-10-12 21:04:13 / trigger: manual）
+# 圧縮前スナップショット（2026-10-12 21:04:13 / trigger: manual / Claude Code）
 
 /compact の focus 指定: 決定事項を残す
 
@@ -48,9 +48,8 @@ Claude Code で `/compact` や自動圧縮（auto-compact）が走っても、�
 1. 設定ファイルが無いときに落ちるので直してください
 2. テストも追加して
 
-## このセッションで編集したファイル（最後に触った順で末尾）
-- src/config.py
-- tests/test_config.py
+## 圧縮直前の Claude の発言（どこまで進んでいたか）
+設定ファイルが無い場合は既定値を使うように直しました。次にテストを追加します。
 
 ## Git 状態
 - ブランチ: `fix-config`
@@ -60,8 +59,9 @@ Claude Code で `/compact` や自動圧縮（auto-compact）が走っても、�
 ?? tests/test_config.py
 ```
 
-## 圧縮直前の Claude の発言（どこまで進んでいたか）
-設定ファイルが無い場合は既定値を使うように直しました。次にテストを追加します。
+## このセッションで編集したファイル（最後に触った順で末尾）
+- src/config.py
+- tests/test_config.py
 ````
 
 - クラウドセッションでは、見出しの下に「元のセッション」の URL が入ります
@@ -194,14 +194,14 @@ Cowork タブではフックが発火しないという報告があります。
 
 | 項目 | 場所 | 既定値 |
 |---|---|---|
-| 残すユーザー指示の数 | `plugins/compact-restore/scripts/pre_compact_snapshot.py` の `RECENT_USER_PROMPTS` | 8 |
-| スナップショットの保持数 | 同 `KEEP` | 20 |
-| 注入する最大文字数 | `plugins/compact-restore/scripts/post_compact_restore.py` の `SNAPSHOT_MAX` / `NOTES_MAX` | 12,000 / 6,000 |
+| 残すユーザー指示の数 | `plugins/compact-restore/scripts/compact_restore_claude.py` の `RECENT_USER_PROMPTS` | 8 |
+| スナップショットの保持数 | `plugins/compact-restore/scripts/compact_restore_core.py` の `KEEP` | 20 |
+| 注入する最大文字数（スナップショットと作業ノートの合計） | 環境変数 `COMPACT_RESTORE_MAX_CHARS`（未設定なら `compact_restore_core.py` の `AGENTS` の `budget`） | 9,000 |
 
 ## 注意事項
 
 - **スナップショットにはユーザー指示の原文が残ります。** 会話に秘密情報を貼った場合は、`.claude/context/snapshots/` を確認・削除してください
-- **会話記録の形式は Claude Code の内部仕様です。** 将来の変更で一部の情報が抜き出せなくなる可能性があります。その場合もフックはエラー終了せず（常に exit 0）、圧縮そのものは妨げません
+- **会話記録の形式は Claude Code の内部仕様です。** 将来の変更で一部の情報が抜き出せなくなる可能性があります。その場合もフックはエラー終了せず（常に exit 0）、圧縮そのものは妨げません。記録は読めたのに指示や発言を1件も取り出せなかったときは、スナップショットの先頭に「⚠ 形式が変わった可能性」と表示します
 - **Python コマンドの名前に注意してください。** Windows（WSL 以外）で `python3` が使えない場合は、設定ファイル内のコマンドを `python` または `py` に書き換えてください
 
 ## 変更履歴
@@ -214,6 +214,7 @@ Cowork タブではフックが発火しないという報告があります。
 | v2 | 作業ノートを個人のものにし、`SessionStart` フックで注入。`team` / `personal` / `global` の 3 モードと `--uninstall` |
 | v3.0 | プラグインとして配布（`plugin` モード）。Claude Code Projects・クラウドセッションに対応 |
 | v3.0.1〜v3.0.5 | Projects のスレッドの発言・進捗表示、TaskCreate / TaskUpdate のタスクリストを記録。作業用の一時ファイルを除外 |
+| v3.1.0 | 注入量をフック出力の上限内に収める（優先度の低いものから削る）。見出しの並びを要点優先に。記録の形式が変わったときの警告。作業ノートの最終更新時刻 |
 | インストーラの修正 | 再インストールで `.gitignore` と CLAUDE.md の並びを保つ。アンインストールで `.claude/context/` の除外を残し、もとの設定に戻す |
 
 ## 開発
@@ -225,6 +226,10 @@ bash tests/run_tests.sh
 GitHub Actions で Ubuntu・macOS × Python 3.9・3.13 の組み合わせで実行しています。テストでは実際の Claude Code は起動しません。フックに渡される JSON と会話記録を模擬して、抽出処理・注入処理・クラウドセッションでの案内・プラグイン構成・4 モードのインストールとアンインストールを検証します。`claude` コマンドがあれば `claude plugin validate` も実行します。
 
 このリポジトリ自体にも `team` モードで導入しています（`.claude/hooks/`・`.claude/commands/`・`.claude/settings.json`）。配布物ではなく、このリポジトリで作業するときの圧縮対策です。`plugins/compact-restore/` のスクリプトやコマンドを変えたら `bash install.sh team .` を再実行して同期してください。ずれているとテストが失敗します。
+
+- スクリプトは、フックの入口（`pre_compact_snapshot.py` / `post_compact_restore.py`）、共通部（`compact_restore_core.py`：保存先・git・スナップショットの書式・注入量の制御）、会話記録の読み取り（`compact_restore_claude.py`）に分かれています
+- `checkpoint` コマンドは `templates/checkpoint.md.in` から `python3 tools/build_commands.py` で生成します。直接編集せず雛形を直してください（ずれているとテストが失敗します）
+- `tools/capture_hook_input.py` は、フックの入力と会話記録をそのまま保存するだけの採取用フックです。ほかのツールへの対応を作る前に、実際の形を確かめるために使います
 
 ## 参考
 

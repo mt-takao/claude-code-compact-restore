@@ -23,17 +23,17 @@ Post-compaction summaries tend to lose concrete details such as which task was i
 |---|---|---|
 | `checkpoint` command | Manually, at natural breakpoints | Updates the working notes `.claude/context/working-notes.md` (goal, decisions, rejected options, current state, next step, open questions). `/compact-restore:checkpoint` when installed as a plugin, `/checkpoint` otherwise |
 | `PreCompact` hook | Automatically, right before compaction | Saves a snapshot of the task list (TodoWrite or TaskCreate / TaskUpdate, or the progress checklist in Projects threads), recent user prompts, edited files (excluding scratch files in temp folders), updated memory files, git state and the last assistant message |
-| `SessionStart` hook | Automatically, at session start and right after compaction | Injects the working notes. Right after compaction, it also injects the snapshot. In cloud sessions it also injects guidance on where to record things |
+| `SessionStart` hook | Automatically, at session start and right after compaction | Injects the working notes. Right after compaction, it also injects the snapshot. In cloud sessions it also injects guidance on where to record things. To stay within the hook output limit (10,000 characters), it trims the lowest-priority parts first (updated memory → edited files → uncommitted file list → older prompts → end of the working notes) |
 
 Working notes and snapshots are **personal**, so they are never committed to git in any install mode.
 
 ### Example snapshot
 
 It is saved to `.claude/context/latest-snapshot.md` right before compaction and injected right after it (history lives in `.claude/context/snapshots/`).
-Sections with nothing recorded (task list, memory, git, and so on) are omitted or shown as "none". The headings are written in Japanese; the translation below is for reference.
+Sections with nothing recorded (task list, memory, git, and so on) are omitted or shown as "none". Tasks, prompts and the last message come first, so the key points survive even when the injection has to be trimmed. The headings are written in Japanese; the translation below is for reference.
 
 ````markdown
-# Pre-compaction snapshot (2026-10-12 21:04:13 / trigger: manual)
+# Pre-compaction snapshot (2026-10-12 21:04:13 / trigger: manual / Claude Code)
 
 /compact focus: keep the decisions
 
@@ -46,9 +46,8 @@ Sections with nothing recorded (task list, memory, git, and so on) are omitted o
 1. It crashes when the config file is missing, please fix it
 2. Add tests too
 
-## Files edited in this session (most recent last)
-- src/config.py
-- tests/test_config.py
+## Claude's last message before compaction (how far it got)
+I made it fall back to defaults when the config file is missing. Next, I'll add tests.
 
 ## Git state
 - Branch: `fix-config`
@@ -58,8 +57,9 @@ Sections with nothing recorded (task list, memory, git, and so on) are omitted o
 ?? tests/test_config.py
 ```
 
-## Claude's last message before compaction (how far it got)
-I made it fall back to defaults when the config file is missing. Next, I'll add tests.
+## Files edited in this session (most recent last)
+- src/config.py
+- tests/test_config.py
 ````
 
 - In cloud sessions, the URL of the original session follows the title
@@ -192,14 +192,14 @@ If you need an earlier state, point to the file for that date and time in `.clau
 
 | Setting | Location | Default |
 |---|---|---|
-| Number of user prompts kept | `RECENT_USER_PROMPTS` in `plugins/compact-restore/scripts/pre_compact_snapshot.py` | 8 |
-| Number of snapshots kept | `KEEP` in the same file | 20 |
-| Maximum characters injected | `SNAPSHOT_MAX` / `NOTES_MAX` in `plugins/compact-restore/scripts/post_compact_restore.py` | 12,000 / 6,000 |
+| Number of user prompts kept | `RECENT_USER_PROMPTS` in `plugins/compact-restore/scripts/compact_restore_claude.py` | 8 |
+| Number of snapshots kept | `KEEP` in `plugins/compact-restore/scripts/compact_restore_core.py` | 20 |
+| Maximum characters injected (snapshot and working notes combined) | The `COMPACT_RESTORE_MAX_CHARS` environment variable (otherwise `budget` in `AGENTS` in `compact_restore_core.py`) | 9,000 |
 
 ## Caveats
 
 - **Snapshots contain your prompts verbatim.** If you pasted secrets into the conversation, check and delete `.claude/context/snapshots/`
-- **The transcript format is internal to Claude Code.** Future changes may prevent some information from being extracted. Even then, the hooks never exit with an error (always exit 0) and never block compaction itself
+- **The transcript format is internal to Claude Code.** Future changes may prevent some information from being extracted. Even then, the hooks never exit with an error (always exit 0) and never block compaction itself. If the transcript can be read but no prompt or message can be extracted from it, the snapshot starts with a "⚠ the format may have changed" warning
 - **Watch the Python command name.** On Windows (outside WSL), if `python3` isn't available, change the command in the settings file to `python` or `py`
 
 ## Changelog
@@ -212,6 +212,7 @@ The main changes are below. See [CHANGELOG.en.md](CHANGELOG.en.md) for details.
 | v2 | Working notes became personal and are injected by the `SessionStart` hook. Three modes, `team` / `personal` / `global`, plus `--uninstall` |
 | v3.0 | Distributed as a plugin (`plugin` mode). Support for Claude Code Projects and cloud sessions |
 | v3.0.1–v3.0.5 | Record Projects thread messages and progress checklists, and TaskCreate / TaskUpdate task lists. Leave scratch files out |
+| v3.1.0 | Keep the injection within the hook output limit (trimming the lowest-priority parts first). Key points first in the snapshot. A warning when the transcript format seems to have changed. Last-updated time for the working notes |
 | Installer fixes | Re-installing keeps the order of `.gitignore` and CLAUDE.md. Uninstalling keeps the `.claude/context/` ignore entry and restores the original settings |
 
 ## Development
@@ -223,6 +224,10 @@ bash tests/run_tests.sh
 GitHub Actions runs them on Ubuntu and macOS with Python 3.9 and 3.13. The tests don't launch the real Claude Code. They simulate the JSON passed to the hooks and the conversation transcript, and verify extraction, injection, the cloud-session guidance, the plugin layout, and install/uninstall for all four modes. When the `claude` command is available, they also run `claude plugin validate`.
 
 This repository also has the kit installed in `team` mode (`.claude/hooks/`, `.claude/commands/`, `.claude/settings.json`). It is not part of what gets distributed; it protects work done in this repository itself. After changing the scripts or commands in `plugins/compact-restore/`, re-run `bash install.sh team .` to sync them. The tests fail if they drift.
+
+- The scripts are split into the hook entry points (`pre_compact_snapshot.py` / `post_compact_restore.py`), the shared core (`compact_restore_core.py`: where things are saved, git, the snapshot format and the injection limit) and the transcript reader (`compact_restore_claude.py`)
+- The `checkpoint` command is generated from `templates/checkpoint.md.in` with `python3 tools/build_commands.py`. Edit the template rather than the generated file (the tests fail if they drift)
+- `tools/capture_hook_input.py` is a capture-only hook that saves the hook input and the transcript as-is. It is used to check the real formats before adding support for another tool
 
 ## References
 
