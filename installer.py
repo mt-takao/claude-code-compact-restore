@@ -26,7 +26,8 @@ PLUGIN_DIR = KIT / "plugins" / "compact-restore"
 MARKETPLACE = "mt-takao"
 PLUGIN_ID = f"compact-restore@{MARKETPLACE}"
 DEFAULT_REPO = "mt-takao/claude-code-compact-restore"
-SCRIPTS = ["pre_compact_snapshot.py", "post_compact_restore.py"]
+SCRIPTS = ["pre_compact_snapshot.py", "post_compact_restore.py"]  # フックとして登録する入口
+MODULES = ["compact_restore_core.py", "compact_restore_claude.py"]  # 入口が読み込む共通部・読み取り部
 SECTION = "## コンテキスト復元（圧縮対策）"
 MARK = "# compact-restore-kit"
 
@@ -220,17 +221,22 @@ def copy_files(hooks_dir, cmds_dir, install):
     if install:
         hooks_dir.mkdir(parents=True, exist_ok=True)
         cmds_dir.mkdir(parents=True, exist_ok=True)
-        for s in SCRIPTS:
+        for s in SCRIPTS + MODULES:
             dst = hooks_dir / s
             shutil.copy2(PLUGIN_DIR / "scripts" / s, dst)
-            dst.chmod(0o755)
+            dst.chmod(0o755 if s in SCRIPTS else 0o644)
         shutil.copy2(PLUGIN_DIR / "commands" / "checkpoint.md", cmds_dir / "checkpoint.md")
         ok(f"スクリプトを {hooks_dir}、/checkpoint を {cmds_dir} に配置")
     else:
-        for p in [*(hooks_dir / s for s in SCRIPTS), cmds_dir / "checkpoint.md"]:
+        for p in [*(hooks_dir / s for s in SCRIPTS + MODULES), cmds_dir / "checkpoint.md"]:
             if p.exists():
                 p.unlink()
-        for d in (hooks_dir, cmds_dir):  # 空になったフォルダは片付ける（ほかのファイルがあれば残す）
+        cache = hooks_dir / "__pycache__"  # 以前の版や手動実行で作られたキャッシュのうち、自分の分だけ消す
+        if cache.is_dir():
+            for c in cache.glob("*.pyc"):
+                if c.name.split(".")[0] + ".py" in SCRIPTS + MODULES:
+                    c.unlink()
+        for d in (cache, hooks_dir, cmds_dir):  # 空になったフォルダは片付ける（ほかのファイルがあれば残す）
             if d.is_dir() and not any(d.iterdir()):
                 d.rmdir()
         ok("スクリプトと /checkpoint を削除")
@@ -293,7 +299,7 @@ def main():
             if git_dir.is_dir() and install:
                 update_ignore(git_dir / "info" / "exclude", [
                     ".claude/context/", ".claude/settings.local.json", "CLAUDE.local.md",
-                    ".claude/hooks/pre_compact_snapshot.py", ".claude/hooks/post_compact_restore.py",
+                    *(f".claude/hooks/{f}" for f in SCRIPTS + MODULES),
                     ".claude/commands/checkpoint.md"], True, "personal")
             elif git_dir.is_dir():
                 kept = remove_ignore(git_dir / "info" / "exclude", proj, "personal")

@@ -55,6 +55,76 @@ check "出力が正しい JSON"                 bash -c "echo '{\"source\":\"com
 E="$WORK/empty"; mkdir -p "$E"
 check "何もなければ何も出力しない"        bash -c "[ -z \"\$(echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$E' python3 '$HOOKS/post_compact_restore.py')\" ]"
 
+check "スナップショットの見出しは要点が先（タスク→指示→直前の発言→git→ファイル）" python3 -c "
+t=open('$S').read(); idx=[t.index(h) for h in ('## 進行中のタスクリスト','## 直近のユーザー指示','## 圧縮直前の','## Git 状態','## このセッションで編集したファイル')]
+assert idx==sorted(idx), idx"
+check "作業ノートに最終更新の時刻を添える"  bash -c "echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/post_compact_restore.py' | grep -q '最終更新: 20'"
+check "上限内なら省略しない"              bash -c "! (echo '{\"source\":\"compact\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/post_compact_restore.py' | grep -q '省略')"
+check "フォルダに __pycache__ を作らない"  test ! -e "$HOOKS/__pycache__"
+
+echo "■ 注入量の制御"
+P="$WORK/budget"; new_repo "$P"; mkdir -p "$P/.claude/context"
+python3 - "$P" <<'PY'
+import sys, pathlib
+ctx = pathlib.Path(sys.argv[1]) / ".claude" / "context"
+prompts = "\n".join(f"{i}. 古い指示{i} " + "あ" * 500 for i in range(1, 8)) + "\n8. 最新の指示です"
+files = "\n".join(f"- src/file{i}.py" for i in range(30))
+(ctx / "latest-snapshot.md").write_text(f"""# 圧縮前スナップショット（2026-10-31 12:00:00 / trigger: auto / Claude Code）
+
+## 進行中のタスクリスト
+- [→] 大事なタスク
+
+## 直近のユーザー指示（古い→新しい）
+{prompts}
+
+## 圧縮直前の Claude の発言（どこまで進んでいたか）
+{"い" * 1400}
+
+## Git 状態
+- ブランチ: `main`
+- 未コミットの変更:
+```
+{chr(10).join(f" M src/file{i}.py" for i in range(40))}
+```
+
+## このセッションで編集したファイル（最後に触った順で末尾）
+{files}
+""", encoding="utf-8")
+(ctx / "working-notes.md").write_text("## ゴール\n- ノートの先頭\n" + "う" * 6000 + "\n## 次にやること\n- ノートの末尾\n", encoding="utf-8")
+PY
+inject() { echo '{"source":"compact"}' | CLAUDE_PROJECT_DIR="$1" python3 "$HOOKS/post_compact_restore.py" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])'; }
+export -f inject; export HOOKS
+check "長すぎても上限（9,000 文字）以内に収める"  bash -c "[ \$(inject '$P' | python3 -c 'import sys; print(len(sys.stdin.read()))') -le 9000 ]"
+check "タスクと最新の指示は残す"                  bash -c "out=\$(inject '$P'); echo \"\$out\" | grep -q '大事なタスク' && echo \"\$out\" | grep -q '最新の指示です'"
+check "古い指示と編集ファイルの一覧から削る"      bash -c "out=\$(inject '$P'); ! echo \"\$out\" | grep -q '古い指示1 ' && ! echo \"\$out\" | grep -q 'src/file0.py'"
+check "作業ノートの先頭は残し、省略時は全文の場所を添える" bash -c "out=\$(inject '$P'); echo \"\$out\" | grep -q 'ノートの先頭' && echo \"\$out\" | grep -q 'latest-snapshot.md）'"
+check "COMPACT_RESTORE_MAX_CHARS で上限を変えられる" bash -c "[ \$(COMPACT_RESTORE_MAX_CHARS=3000 inject '$P' | python3 -c 'import sys; print(len(sys.stdin.read()))') -le 3000 ]"
+LONG="$WORK/a-very-long-folder-name-like-macos-var-folders/xx/abcdefghijklmnopqrstuvwx/T/tmp.ABCDEFGHIJ/budget"
+mkdir -p "$LONG/.claude/context"; cp "$P/.claude/context/"*.md "$LONG/.claude/context/"
+check "長いパス・小さい上限でも止まらずに終わる"   python3 -c "
+import os,subprocess,sys
+env=dict(os.environ,COMPACT_RESTORE_MAX_CHARS='1500',CLAUDE_PROJECT_DIR='$LONG')
+r=subprocess.run([sys.executable,'$HOOKS/post_compact_restore.py'],input=b'{\"source\":\"compact\"}',env=env,capture_output=True,timeout=20)
+import json; t=json.loads(r.stdout)['hookSpecificOutput']['additionalContext']; assert len(t)<=1500, len(t)"
+
+echo "■ 記録の形式"
+P="$WORK/drift"; new_repo "$P"
+printf '{"kind":"something-new","payload":{}}\n{"kind":"other"}\n' > "$WORK/unknown.jsonl"
+echo "{\"transcript_path\":\"$WORK/unknown.jsonl\"}" | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
+check "知らない形式なら警告を出す"              grep -q "形式が変わった可能性" "$P/.claude/context/latest-snapshot.md"
+echo "{\"transcript_path\":\"$WORK/missing.jsonl\"}" | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
+check "記録がなくても git の状態で退避する"     bash -c "grep -q '見つかりませんでした' '$P/.claude/context/latest-snapshot.md' && grep -q 'feature/test' '$P/.claude/context/latest-snapshot.md'"
+touch "$WORK/rollout.jsonl.zst"
+check "圧縮形式の記録でも exit 0 で退避する"    bash -c "echo '{\"transcript_path\":\"$WORK/rollout.jsonl.zst\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$HOOKS/pre_compact_snapshot.py' && grep -q '圧縮形式' '$P/.claude/context/latest-snapshot.md'"
+P="$WORK/normal"; new_repo "$P"; T=$(transcript_for "$P")
+echo "{\"transcript_path\":\"$T\"}" | CLAUDE_PROJECT_DIR="$P" python3 "$HOOKS/pre_compact_snapshot.py"
+check "正常な記録では警告を出さない"            bash -c "! grep -q '⚠' '$P/.claude/context/latest-snapshot.md'"
+
+echo "■ 採取用の仮フック"
+CAP="$WORK/capture"
+check "入力と記録を保存し、何も出力しない"      bash -c "[ -z \"\$(echo '{\"hook_event_name\":\"PreCompact\",\"transcript_path\":\"$FIXTURE\"}' | COMPACT_RESTORE_CAPTURE_DIR='$CAP' python3 '$ROOT/tools/capture_hook_input.py')\" ] && ls '$CAP'/*-PreCompact/input.json '$CAP'/*-PreCompact/transcript.jsonl"
+check "壊れた入力でも exit 0"                  bash -c "echo garbage | COMPACT_RESTORE_CAPTURE_DIR='$CAP' python3 '$ROOT/tools/capture_hook_input.py'"
+
 echo "■ install: team"
 P="$WORK/team"; new_repo "$P"; mkdir -p "$P/.claude"
 echo '{"permissions":{"allow":["Bash(npm test)"]},"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo done"}]}]}}' > "$P/.claude/settings.json"
@@ -64,6 +134,8 @@ bash "$ROOT/install.sh" team "$P" >/dev/null; bash "$ROOT/install.sh" team "$P" 
 check "既存の権限・フックを保持"          python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert d['permissions'] and d['hooks']['Stop']"
 check "再実行してもフックが重複しない"    python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));assert len(d['hooks']['PreCompact'])==1 and len(d['hooks']['SessionStart'])==1"
 check "既存の CLAUDE.md ルールを保持"      grep -q "keep me" "$P/CLAUDE.md"
+check "共通部と読み取り部も配置する"       bash -c "[ -f '$P/.claude/hooks/compact_restore_core.py' ] && [ -f '$P/.claude/hooks/compact_restore_claude.py' ]"
+check "導入先でフックを動かしても __pycache__ を作らない" bash -c "echo '{\"source\":\"startup\"}' | CLAUDE_PROJECT_DIR='$P' python3 '$P/.claude/hooks/post_compact_restore.py' >/dev/null && [ ! -e '$P/.claude/hooks/__pycache__' ]"
 check "運用ルールが1回だけ入る"            test "$(grep -c 'コンテキスト復元（圧縮対策）' "$P/CLAUDE.md")" = 1
 check ".claude/context/ が gitignore される" bash -c "mkdir -p '$P/.claude/context' && touch '$P/.claude/context/x' && git -C '$P' check-ignore -q .claude/context/x"
 printf '\nnode_modules/\n' >> "$P/.gitignore"; cp "$P/.gitignore" "$WORK/gitignore.before"
@@ -76,6 +148,7 @@ bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
 check "uninstall: 空になったフォルダは消し、ほかのファイルがあれば残す" bash -c "[ ! -d '$P/.claude/commands' ] && [ -f '$P/.claude/hooks/other.sh' ]"
 check "uninstall で後から足した節は残す"   bash -c "grep -q '^- after\$' '$P/CLAUDE.md' && grep -q '^## 後から足した節\$' '$P/CLAUDE.md'"
 check "uninstall: ノートが残る間は除外を残す" bash -c "git -C '$P' check-ignore -q .claude/context/x && grep -q '^node_modules/\$' '$P/.gitignore'"
+check "uninstall で共通部も消える"         bash -c "[ ! -e '$P/.claude/hooks/compact_restore_core.py' ] && [ ! -e '$P/.claude/hooks/compact_restore_claude.py' ]"
 check "uninstall で自分のフックだけ消える" python3 -c "import json;d=json.load(open('$P/.claude/settings.json'));h=d['hooks'];assert 'Stop' in h and 'PreCompact' not in h and 'SessionStart' not in h"
 check "uninstall で運用ルールが消える"     bash -c "! grep -q 'コンテキスト復元' '$P/CLAUDE.md' && grep -q 'keep me' '$P/CLAUDE.md'"
 rm -rf "$P/.claude/context"; bash "$ROOT/install.sh" team "$P" --uninstall >/dev/null
@@ -157,7 +230,8 @@ cmds=[x['command'] for g in h.values() for e in g for x in e['hooks']]
 assert len(cmds)==2
 for c in cmds:
     path=re.search(r'\\$\{CLAUDE_PLUGIN_ROOT\}/(\S+?)\"',c).group(1); assert os.path.isfile(os.path.join('$PLUGIN',path)), path"
-check "このリポジトリの team 導入物が配布版と同じ" bash -c "cmp -s '$ROOT/.claude/hooks/pre_compact_snapshot.py' '$PLUGIN/scripts/pre_compact_snapshot.py' && cmp -s '$ROOT/.claude/hooks/post_compact_restore.py' '$PLUGIN/scripts/post_compact_restore.py' && cmp -s '$ROOT/.claude/commands/checkpoint.md' '$PLUGIN/commands/checkpoint.md'"
+check "このリポジトリの team 導入物が配布版と同じ" bash -c "for f in pre_compact_snapshot.py post_compact_restore.py compact_restore_core.py compact_restore_claude.py; do cmp -s '$ROOT/.claude/hooks/'\$f '$PLUGIN/scripts/'\$f || exit 1; done; cmp -s '$ROOT/.claude/commands/checkpoint.md' '$PLUGIN/commands/checkpoint.md'"
+check "checkpoint コマンドが雛形から生成したものと同じ" python3 "$ROOT/tools/build_commands.py" --check
 if command -v claude >/dev/null 2>&1; then
   check "claude plugin validate（マーケットプレイス）" bash -c "claude plugin validate '$ROOT' | grep -q 'Validation passed'"
 fi
